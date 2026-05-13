@@ -155,8 +155,8 @@ export const runSimulation = (
   const JUMP_EQUITY_GROWTH = 0.08;
   const RENTAL_GROWTH_RATE = 0.074;
 
-  let startYear = new Date().getFullYear();
-  let startMonth = new Date().getMonth();
+  const startYear = new Date().getFullYear();
+  const startMonth = new Date().getMonth();
 
   // Always start simulation from current date to ensure accurate "today" values
   // and avoid using stale snapshot_date from local storage.
@@ -618,7 +618,7 @@ export const runSimulation = (
     const isIndependent = independenceRatio >= 1.0;
 
     // Record every data point to support dense monthly tracking (Calendar View)
-    if (true) { // Replaced modulo logic to return full resolution
+    // Replaced modulo logic to return full resolution
       // Calculate Granular Data for Charting
       const salaryPart = monthlySalaryNet + monthlyBonusNet + monthlyPartnerNet;
 
@@ -674,7 +674,6 @@ export const runSimulation = (
         socialSecurityIncome: Math.round(socialSecurityIncome * 12),
         educationAssets: Math.round(current529) // Capture 529 balance
       });
-    }
   }
 
   return points;

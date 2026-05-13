@@ -107,7 +107,6 @@ describe('Calculator Engine V5', () => {
     // Run baseline for comparison
     const basePoints = runSimulation(baseSnapshot, baseConfig, 150);
 
-    const eventPoint = points.find(p => p.date.includes('2031')); // Look at 2031 to see effect of 2030 event? 
     // Or better, check the specific month 0 of 2030? 
     // The loop iterates months. Event happens in month 0 of year.
     // 2024 is year 0. 2030 is year 6. Month index 72.
