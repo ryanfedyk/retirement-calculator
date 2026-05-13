@@ -55,11 +55,6 @@ export const TopBar: React.FC = () => {
     snapshot.education_assets.total_529 +
     (snapshot.other_investments || []).reduce((acc, inv) => acc + (inv.shares * inv.current_price), 0);
 
-  const liabilities =
-    snapshot.liabilities.mortgage_balance +
-    snapshot.liabilities.consumer_debt +
-    snapshot.liabilities.upcoming_capital_calls;
-
   const netWorth = assets;
 
   return (
@@ -121,3 +116,4 @@ export const TopBar: React.FC = () => {
     </header>
   );
 };
+// Force rebuild
