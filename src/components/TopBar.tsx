@@ -60,7 +60,7 @@ export const TopBar: React.FC = () => {
     snapshot.liabilities.consumer_debt +
     snapshot.liabilities.upcoming_capital_calls;
 
-  const netWorth = assets - liabilities;
+  const netWorth = assets;
 
   return (
     <header className="h-auto md:h-16 py-3 md:py-0 bg-white border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between px-4 md:px-6 sticky top-0 z-10 gap-3 md:gap-0">
