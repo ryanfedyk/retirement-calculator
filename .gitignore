@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.pdf
+*.csv
+*.png
+*.log
+.DS_Store
+*.code-workspace
+demo_statement.txt
