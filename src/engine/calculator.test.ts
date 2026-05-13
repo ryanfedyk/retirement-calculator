@@ -94,7 +94,7 @@ describe('Calculator Engine V5', () => {
   it('deducts life events correctly', () => {
     const eventConfig: SimulationConfiguration = {
       ...baseConfig,
-      life_events: [{ name: 'College', year: 2030, cost: 100000 }]
+      life_events: [{ name: 'Wedding', year: 2030, cost: 100000 }]
     };
 
     const points = runSimulation(baseSnapshot, eventConfig, 150);
@@ -145,6 +145,37 @@ describe('Calculator Engine V5', () => {
     
     if (partner2025 && base2025) {
       expect(partner2025.liquidCash).toBeGreaterThan(base2025.liquidCash);
+    }
+  });
+
+  it('does not subtract liabilities from totalNetWorth', () => {
+    const points = runSimulation(baseSnapshot, baseConfig, 150);
+    const initialPoint = points[0];
+    expect(initialPoint.totalNetWorth).toBeGreaterThanOrEqual(400000);
+  });
+
+  it('handles upcoming capital calls with date', () => {
+    const currentYear = new Date().getFullYear();
+    const dueYear = currentYear + 1;
+    const snapshotWithCall: FinancialSnapshot = {
+      ...baseSnapshot,
+      liabilities: {
+        ...baseSnapshot.liabilities,
+        upcoming_capital_calls: 50000,
+        capital_calls_due_date: `${dueYear}-06`
+      }
+    } as any;
+    
+    const points = runSimulation(snapshotWithCall, baseConfig, 150);
+    
+    const targetDateStr = new Date(dueYear, 5).toLocaleString('default', { month: 'short', year: 'numeric' });
+    const targetPoint = points.find(p => p.date === targetDateStr);
+    
+    const basePoints = runSimulation(baseSnapshot, baseConfig, 150);
+    const basePoint = basePoints.find(p => p.date === targetDateStr);
+    
+    if (targetPoint && basePoint) {
+      expect(targetPoint.liquidCash).toBeLessThan(basePoint.liquidCash);
     }
   });
 });

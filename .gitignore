@@ -7,3 +7,5 @@ dist/
 .DS_Store
 *.code-workspace
 demo_statement.txt
+.env
+*.env

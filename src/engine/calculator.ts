@@ -24,8 +24,11 @@ export interface FinancialSnapshot {
   liabilities: {
     mortgage_balance: number;
     mortgage_interest_rate?: number; // Optional override
+    mortgage_payoff_date?: string;
     consumer_debt: number;
+    consumer_debt_payoff_date?: string;
     upcoming_capital_calls: number;
+    capital_calls_due_date?: string;
   };
   other_investments: Array<{
     id: string;
@@ -183,6 +186,9 @@ export const runSimulation = (
   let currentMortgage = snapshot.liabilities.mortgage_balance;
   let currentConsumerDebt = snapshot.liabilities.consumer_debt;
   const mortgageRate = snapshot.liabilities.mortgage_interest_rate || 3.5;
+  const mortgagePayoffDate = snapshot.liabilities.mortgage_payoff_date 
+    ? new Date(snapshot.liabilities.mortgage_payoff_date) 
+    : new Date(2051, 5, 1); // Default June 2051
 
   const sabbaticalEndYear = config.career_path.exit_year + (config.career_path.use_sabbatical ? config.career_path.sabbatical_duration : 0);
   const jumpEndYear = sabbaticalEndYear + (config.career_path.use_jump ? config.career_path.jump_duration : 0);
@@ -394,7 +400,6 @@ export const runSimulation = (
     // ... (Mortgage logic continues) ...
 
 
-    const mortgagePayoffDate = new Date(2051, 5, 1); // Month is 0-indexed (5 = June)
     if (currentDate < mortgagePayoffDate) {
       const payment = config.spending.mortgage_payment;
       expense += payment;
@@ -438,6 +443,14 @@ export const runSimulation = (
           }
         }
       });
+    }
+
+    // Upcoming Capital Calls
+    if (snapshot.liabilities.upcoming_capital_calls > 0 && snapshot.liabilities.capital_calls_due_date) {
+      const dueDate = new Date(snapshot.liabilities.capital_calls_due_date);
+      if (currentDate.getFullYear() === dueDate.getFullYear() && currentDate.getMonth() === dueDate.getMonth()) {
+        expense += snapshot.liabilities.upcoming_capital_calls;
+      }
     }
 
     // Divestment Strategy
@@ -585,7 +598,7 @@ export const runSimulation = (
     const currentGoogValue = currentGoogShares * currentGoogPrice;
     const totalLiabilities = currentMortgage + currentConsumerDebt;
     // Total Net Worth includes everything
-    const totalNetWorth = liquidCash + retirement + currentGoogValue + currentJumpStockValue + totalOtherInvestmentsValue + current529 - totalLiabilities;
+    const totalNetWorth = liquidCash + retirement + currentGoogValue + currentJumpStockValue + totalOtherInvestmentsValue + current529;
 
     // Independence Metric / Portfolio Strength
     // "True FI" relies on Liquid + Retirement + Jump (if liquid events happen). 
@@ -621,7 +634,6 @@ export const runSimulation = (
       // Mortgage Payment (Monthly)
       // If we still have a mortgage, the payment is fixed (config).
       // We use the same Date check as above to ensure consistency with the Expense calculation.
-      const mortgagePayoffDate = new Date(2051, 5, 1); // June 2051
       const currentMortgagePayment = (currentDate < mortgagePayoffDate) ? config.spending.mortgage_payment : 0;
 
       // Lifestyle (Monthly)
