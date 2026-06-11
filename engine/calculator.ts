@@ -230,6 +230,11 @@ export const runSimulation = (
   // Federal mortgage acquisition debt deductibility cap (post-12/16/2017 loans)
   const FED_MORTGAGE_CAP = 750_000;
 
+  // Convert an annual percentage rate (e.g. 7) to its TRUE monthly compounding
+  // factor: (1 + r)^(1/12) − 1. Dividing the annual rate by 12 overstates the
+  // effective annual yield (7%/12 monthly compounds to ~7.23%/yr).
+  const monthlyRate = (annualPct: number) => Math.pow(1 + annualPct / 100, 1 / 12) - 1;
+
   // ── Main simulation loop (360 months = 30 years) ──────────────────────────
   for (let month = 0; month < 360; month++) {
 
@@ -243,17 +248,18 @@ export const runSimulation = (
     const effectiveMarketReturn = Math.max(0, config.market_assumptions.market_return_rate - config.market_assumptions.volatility_drag);
     const inflationMultiplier   = Math.pow(1 + config.market_assumptions.inflation_rate / 100, yearsPassed);
 
-    // ── Asset growth ───────────────────────────────────────────────────────
-    currentGoogPrice      *= (1 + config.market_assumptions.goog_growth_rate / 12 / 100);
-    currentJumpStockValue *= (1 + JUMP_EQUITY_GROWTH / 12);
-    liquidCash   *= (1 + effectiveMarketReturn / 12 / 100);
-    tradBalance  *= (1 + effectiveMarketReturn / 12 / 100);
-    rothBalance  *= (1 + effectiveMarketReturn / 12 / 100);
-    current529   *= (1 + config.market_assumptions.market_return_rate / 12 / 100);
+    // ── Asset growth (true geometric monthly compounding) ────────────────────
+    const marketMo = monthlyRate(effectiveMarketReturn);
+    currentGoogPrice      *= (1 + monthlyRate(config.market_assumptions.goog_growth_rate));
+    currentJumpStockValue *= (1 + monthlyRate(JUMP_EQUITY_GROWTH * 100));
+    liquidCash   *= (1 + marketMo);
+    tradBalance  *= (1 + marketMo);
+    rothBalance  *= (1 + marketMo);
+    current529   *= (1 + monthlyRate(config.market_assumptions.market_return_rate));
 
     let totalOtherInvestmentsValue = 0;
     for (const inv of currentOtherInvestments) {
-      inv.currentValue *= (1 + Math.max(0, inv.expectedReturn - config.market_assumptions.volatility_drag) / 12 / 100);
+      inv.currentValue *= (1 + monthlyRate(Math.max(0, inv.expectedReturn - config.market_assumptions.volatility_drag)));
       totalOtherInvestmentsValue += inv.currentValue;
     }
 
@@ -452,10 +458,27 @@ export const runSimulation = (
 
     let expense = baseMonthlySpend * inflationMultiplier;
 
-    // Social Security
+    // Social Security — up to 85% of benefits are federally taxable; NY exempts
+    // SS entirely (so we compute federal-only by passing state 'NONE'). The
+    // taxable portion stacks on top of other ordinary income (rental).
     let socialSecurityIncome = 0;
     if (config.social_security && currentAge >= config.social_security.start_age) {
-      socialSecurityIncome = config.social_security.monthly_amount * inflationMultiplier;
+      const grossSSAnnual = config.social_security.monthly_amount * inflationMultiplier * 12;
+      const taxableSSAnnual = grossSSAnnual * 0.85; // max inclusion for higher-income retirees
+
+      const ssBaseTax = calculateTax({
+        filingStatus: config.tax_assumptions.filing_status, state: "NONE",
+        grossIncome: 0, ficaExemptIncome: annualRentalGross,
+        longTermCapitalGains: 0, shortTermCapitalGains: 0,
+      });
+      const ssWithTax = calculateTax({
+        filingStatus: config.tax_assumptions.filing_status, state: "NONE",
+        grossIncome: 0, ficaExemptIncome: annualRentalGross + taxableSSAnnual,
+        longTermCapitalGains: 0, shortTermCapitalGains: 0,
+      });
+      const ssFedTaxAnnual = Math.max(0, ssWithTax.federalIncomeTax - ssBaseTax.federalIncomeTax);
+
+      socialSecurityIncome = (grossSSAnnual - ssFedTaxAnnual) / 12; // net monthly
       liquidCash += socialSecurityIncome;
     }
 
@@ -643,7 +666,9 @@ export const runSimulation = (
     const effectiveTaxDrag = phase === 'RETIRED'
       ? 0.20 * (1 - rothFraction)  // Roth withdrawals incur 0% tax drag
       : 0.25;
-    const swrBaseSpend      = (baseMonthlySpend + currentHealthcareCost) * inflationMultiplier;
+    // baseMonthlySpend is in today's dollars (inflate it); currentHealthcareCost
+    // is ALREADY inflation-adjusted above, so it must not be inflated again.
+    const swrBaseSpend      = baseMonthlySpend * inflationMultiplier + currentHealthcareCost;
     const rawSWRTarget      = (swrBaseSpend * 12) / 0.04;
     const adjustedSWRTarget = rawSWRTarget / Math.max(0.5, 1 - effectiveTaxDrag);
 

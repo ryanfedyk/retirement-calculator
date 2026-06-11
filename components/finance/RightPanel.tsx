@@ -288,7 +288,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
       <div style={{
         background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12,
         display: "flex", flexDirection: "column",
-        height: chartView === "timeline" ? 630 : 585,
+        height: chartView === "timeline" ? 580 : 536,
         transition: "height 0.3s ease",
       }}>
         {/* Chart header */}
@@ -301,7 +301,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
                "Wealth Trajectory"}
             </div>
             <div style={{ fontSize: 10, color: C.inkSoft, marginTop: 2 }}>
-              {chartView === "timeline" ? "Month-by-month phases & milestones" : "Inflation-adjusted 30-year projection"}
+              {chartView === "timeline" ? "Month-by-month phases & milestones" : "Nominal 30-year projection (future dollars)"}
             </div>
           </div>
 
@@ -325,7 +325,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
           {chartView === "timeline" ? (
             <LifeCalendar data={trajectoryData} config={config} />
           ) : (
-            <ResponsiveContainer width="100%" height={495}>
+            <ResponsiveContainer width="100%" height={446}>
               <AreaChart data={chartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
