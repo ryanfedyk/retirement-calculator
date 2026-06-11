@@ -60,10 +60,12 @@ export interface SimulationConfiguration {
     jump_grant_monthly: number;
     bridge_gross_annual: number;
     bridge_has_health_insurance?: boolean;
-    income_growth_rate: number;   // Nominal annual raise % (NOT stacked on top of inflation)
+    income_growth_rate: number;    // Nominal annual raise % (not stacked on inflation)
     target_bonus_rate: number;
     annual_equity_grant: number;
     monthly_rental_income: number;
+    annual_401k_contribution?: number;  // Pre-tax 401k (default IRS max)
+    annual_backdoor_roth?: number;      // Backdoor Roth IRA per year (default $7k)
     use_partner_income?: boolean;
     partner_gross_annual_salary?: number;
     partner_employment_start_year?: number;
@@ -79,6 +81,13 @@ export interface SimulationConfiguration {
   tax_assumptions: {
     filing_status: 'single' | 'married_joint' | 'married_separate' | 'head_household';
     state_of_residence: 'CA' | 'WA' | 'TX' | 'NY' | 'NONE';
+  };
+  tax_optimization: {
+    enable_aca_optimization: boolean;      // Model ACA subsidies during low-income phases
+    aca_family_size: number;               // Household size for FPL calculation
+    aca_benchmark_monthly_premium: number; // Silver plan benchmark for subsidy calc
+    enable_roth_conversion: boolean;       // Convert trad 401k to Roth during sabbatical
+    roth_conversion_target_bracket: number;// Convert up to this $ taxable income (MFJ)
   };
   divestment_strategy: {
     type: 'none' | 'immediate' | 'progressive';
@@ -113,15 +122,21 @@ export interface TrajectoryPoint {
   monthIndex: number;
   liquidCash: number;
   retirement: number;
+  rothBalance: number;      // Roth portion of retirement (tax-free in retirement)
   googValue: number;
   totalNetWorth: number;
   totalLiabilities: number;
   isIndependent: boolean;
   swrTarget: number;
   currentPhase: 'GOOGLE' | 'SABBATICAL' | 'JUMP' | 'BRIDGE' | 'RETIRED';
+  // Income — all NET of tax, annualised
+  salaryAndEquityNet: number;
+  rentalIncomeNet: number;
+  socialSecurityNet: number;
+  totalCompensation: number;
+  // Expenses — annualised gross
   rentalIncome: number;
   healthcareCost: number;
-  totalCompensation: number;
   accumulatedReturns: number;
   mortgagePayment: number;
   lifestyleExpense: number;
@@ -130,6 +145,27 @@ export interface TrajectoryPoint {
 }
 
 import { calculateTax } from './tax_engine';
+
+// ── ACA Federal Poverty Line (2025) ──────────────────────────────────────────
+// 48 contiguous states + DC
+function getFPL(familySize: number): number {
+  const base = 15_060;
+  const perPerson = 5_380;
+  return base + perPerson * Math.max(0, familySize - 1);
+}
+
+// ACA maximum required premium contribution as % of MAGI (2025 ARP rules)
+function acaMaxContributionPct(fplRatio: number): number {
+  if (fplRatio <= 1.00) return 0.000;
+  if (fplRatio <= 1.33) return 0.000;
+  if (fplRatio <= 1.50) return 0.020;
+  if (fplRatio <= 2.00) return 0.060;
+  if (fplRatio <= 2.50) return 0.080;
+  if (fplRatio <= 3.00) return 0.100;
+  return 0.085; // ARP cap: max 8.5% of income for any income level
+}
+
+// ── Main simulation ───────────────────────────────────────────────────────────
 
 export const runSimulation = (
   snapshot: FinancialSnapshot,
@@ -140,54 +176,61 @@ export const runSimulation = (
 
   const live_price = live_price_input > 0 ? live_price_input : 175.00;
 
-  const incomeProfile = config.income_profile;
-  const jumpGrossAnnual   = incomeProfile.jump_gross_annual   || 275_000;
-  const bridgeGrossAnnual = incomeProfile.bridge_gross_annual || 220_000;
+  const ip = config.income_profile;
+  const jumpGrossAnnual   = ip.jump_gross_annual   || 275_000;
+  const bridgeGrossAnnual = ip.bridge_gross_annual || 220_000;
+  const opt               = config.tax_optimization;
 
   const JUMP_EQUITY_GROWTH = 0.08;
-  const RENTAL_GROWTH_RATE = 0.074; // User-specified — kept as-is
+  const RENTAL_GROWTH_RATE = 0.074; // User-specified
 
   const startYear  = new Date().getFullYear();
   const startMonth = new Date().getMonth();
 
   // ── Initial balances ───────────────────────────────────────────────────────
   let liquidCash  = snapshot.liquid_assets.vanguard_bridge + snapshot.liquid_assets.cash_savings;
-  let retirement  = snapshot.retirement_assets.k401 + snapshot.retirement_assets.roth_ira + snapshot.retirement_assets.traditional_ira;
+  // Split retirement into Roth (tax-free) vs traditional (taxable on withdrawal)
+  let rothBalance  = snapshot.retirement_assets.roth_ira;
+  let tradBalance  = snapshot.retirement_assets.k401 + snapshot.retirement_assets.traditional_ira;
 
-  // GOOG from portfolio (preferred) + legacy share_counts field
-  const googInvs  = snapshot.other_investments?.filter(inv => inv.symbol === 'GOOG' || inv.symbol === 'GOOGL') ?? [];
-  const googFromPortfolio = googInvs.reduce((s, inv) => s + inv.shares, 0);
+  const googInvs          = (snapshot.other_investments ?? []).filter(i => i.symbol === 'GOOG' || i.symbol === 'GOOGL');
+  const googFromPortfolio = googInvs.reduce((s, i) => s + i.shares, 0);
   let currentGoogShares   = googFromPortfolio + (snapshot.share_counts.google_shares || 0);
   const currentGoogByBasis: { shares: number; basis: number }[] = [
     { shares: currentGoogShares, basis: snapshot.share_counts.cost_basis || 0 },
   ];
 
-  let currentGoogPrice    = live_price;
+  let currentGoogPrice      = live_price;
   let currentJumpStockValue = 0;
-  let current529          = (snapshot.education_assets.accounts || []).reduce((s, a) => s + a.balance, 0);
+  let current529 = (snapshot.education_assets.accounts || []).reduce((s, a) => s + a.balance, 0);
   let currentMortgage     = snapshot.liabilities.mortgage_balance;
   let currentConsumerDebt = snapshot.liabilities.consumer_debt;
 
-  const mortgageRate = snapshot.liabilities.mortgage_interest_rate || 3.5;
+  const mortgageRate       = snapshot.liabilities.mortgage_interest_rate || 3.5;
   const mortgagePayoffDate = snapshot.liabilities.mortgage_payoff_date
     ? new Date(snapshot.liabilities.mortgage_payoff_date)
     : new Date(2051, 5, 1);
 
-  // Career phase boundaries
   const sabbaticalEndYear = config.career_path.exit_year + (config.career_path.use_sabbatical ? config.career_path.sabbatical_duration : 0);
   const jumpEndYear       = sabbaticalEndYear + (config.career_path.use_jump   ? config.career_path.jump_duration   : 0);
   const bridgeEndYear     = jumpEndYear       + (config.career_path.use_bridge ? config.career_path.bridge_duration : 0);
 
-  // Non-GOOG investments
   const currentOtherInvestments = (snapshot.other_investments ?? [])
-    .filter(inv => inv.symbol !== 'GOOG' && inv.symbol !== 'GOOGL')
-    .map(inv => ({
-      ...inv,
-      currentValue:   (inv.shares * inv.current_price) || 0,
-      expectedReturn: inv.expected_return ?? config.market_assumptions.market_return_rate,
+    .filter(i => i.symbol !== 'GOOG' && i.symbol !== 'GOOGL')
+    .map(i => ({
+      ...i,
+      currentValue:   (i.shares * i.current_price) || 0,
+      expectedReturn: i.expected_return ?? config.market_assumptions.market_return_rate,
     }));
 
-  // ── Main loop (360 months = 30 years) ─────────────────────────────────────
+  // IRS 401k limits 2025
+  const K401_LIMIT      = 23_500;
+  const CATCHUP_LIMIT   = 7_500;  // Age 50+
+  const CATCHUP_AGE     = 50;
+  // Federal mortgage acquisition debt deductibility cap (post-12/16/2017 loans)
+  const FED_MORTGAGE_CAP = 750_000;
+
+  // ── Main simulation loop (360 months = 30 years) ──────────────────────────
   for (let month = 0; month < 360; month++) {
 
     const totalMonths = startMonth + month;
@@ -195,45 +238,43 @@ export const runSimulation = (
     const monthOfYear = totalMonths % 12;
     const currentDate = new Date(currentYear, monthOfYear, 1);
     const yearsPassed = month / 12;
+    const currentAge  = currentYear - (config.birth_year || 1980);
 
     const effectiveMarketReturn = Math.max(0, config.market_assumptions.market_return_rate - config.market_assumptions.volatility_drag);
+    const inflationMultiplier   = Math.pow(1 + config.market_assumptions.inflation_rate / 100, yearsPassed);
 
     // ── Asset growth ───────────────────────────────────────────────────────
     currentGoogPrice      *= (1 + config.market_assumptions.goog_growth_rate / 12 / 100);
     currentJumpStockValue *= (1 + JUMP_EQUITY_GROWTH / 12);
-    liquidCash  *= (1 + effectiveMarketReturn / 12 / 100);
-    retirement  *= (1 + effectiveMarketReturn / 12 / 100);
-    current529  *= (1 + config.market_assumptions.market_return_rate / 12 / 100);
+    liquidCash   *= (1 + effectiveMarketReturn / 12 / 100);
+    tradBalance  *= (1 + effectiveMarketReturn / 12 / 100);
+    rothBalance  *= (1 + effectiveMarketReturn / 12 / 100);
+    current529   *= (1 + config.market_assumptions.market_return_rate / 12 / 100);
 
     let totalOtherInvestmentsValue = 0;
     for (const inv of currentOtherInvestments) {
-      const growthRate = Math.max(0, inv.expectedReturn - config.market_assumptions.volatility_drag);
-      inv.currentValue *= (1 + growthRate / 12 / 100);
+      inv.currentValue *= (1 + Math.max(0, inv.expectedReturn - config.market_assumptions.volatility_drag) / 12 / 100);
       totalOtherInvestmentsValue += inv.currentValue;
     }
 
     // ── Phase determination ────────────────────────────────────────────────
     let phase: 'GOOGLE' | 'SABBATICAL' | 'JUMP' | 'BRIDGE' | 'RETIRED' = 'GOOGLE';
-
-    // FIX #8: income_growth_rate is treated as pure nominal raise (not stacked on inflation)
-    const nominalIncomeGrowth   = (incomeProfile.income_growth_rate || 0) / 100;
+    const nominalIncomeGrowth    = (ip.income_growth_rate || 0) / 100;
     const salaryGrowthMultiplier = Math.pow(1 + nominalIncomeGrowth, yearsPassed);
-    const inflationMultiplier   = Math.pow(1 + config.market_assumptions.inflation_rate / 100, yearsPassed);
 
     let annualBaseSalary  = 0;
     let annualTargetBonus = 0;
 
     if (currentYear < config.career_path.exit_year) {
       phase = 'GOOGLE';
-      const base = incomeProfile.gross_annual_salary || 0;
-      annualBaseSalary  = base * salaryGrowthMultiplier;
-      annualTargetBonus = annualBaseSalary * ((incomeProfile.target_bonus_rate || 0) / 100);
+      annualBaseSalary  = (ip.gross_annual_salary || 0) * salaryGrowthMultiplier;
+      annualTargetBonus = annualBaseSalary * ((ip.target_bonus_rate || 0) / 100);
     } else if (currentYear < sabbaticalEndYear) {
       phase = 'SABBATICAL';
     } else if (currentYear < jumpEndYear) {
       phase = 'JUMP';
       annualBaseSalary  = jumpGrossAnnual * salaryGrowthMultiplier;
-      annualTargetBonus = annualBaseSalary * ((incomeProfile.jump_bonus_rate || 0) / 100);
+      annualTargetBonus = annualBaseSalary * ((ip.jump_bonus_rate || 0) / 100);
     } else if (currentYear < bridgeEndYear) {
       phase = 'BRIDGE';
       annualBaseSalary = bridgeGrossAnnual * inflationMultiplier;
@@ -242,90 +283,109 @@ export const runSimulation = (
     }
 
     // ── Partner income ─────────────────────────────────────────────────────
-    const partnerStarts  = incomeProfile.partner_employment_start_year ?? currentYear;
-    const partnerRetires = incomeProfile.partner_retirement_year ?? 2030;
+    const partnerStarts  = ip.partner_employment_start_year ?? currentYear;
+    const partnerRetires = ip.partner_retirement_year ?? 2030;
     let annualPartnerGross = 0;
-    if (incomeProfile.use_partner_income && incomeProfile.partner_gross_annual_salary &&
+    if (ip.use_partner_income && ip.partner_gross_annual_salary &&
         currentYear >= partnerStarts && currentYear < partnerRetires) {
-      annualPartnerGross = incomeProfile.partner_gross_annual_salary * salaryGrowthMultiplier;
+      annualPartnerGross = ip.partner_gross_annual_salary * salaryGrowthMultiplier;
     }
 
-    // FIX #6: Rental income is FICA-exempt (passed separately to tax engine)
-    const rentalIncome    = (incomeProfile.monthly_rental_income || 0)
+    // ── Rental income (FICA-exempt, ordinary income tax) ──────────────────
+    const rentalIncome     = (ip.monthly_rental_income || 0)
       * Math.pow(1 + RENTAL_GROWTH_RATE, Math.floor(yearsPassed));
     const annualRentalGross = rentalIncome * 12;
 
     // ── RSU vesting ────────────────────────────────────────────────────────
     let monthlyEquityVestUnits = 0;
-
     if (phase === 'GOOGLE') {
-      // Initial grant — linear monthly vesting over vesting_years
-      let initialGrantUnits = 0;
-      if (yearsPassed < (incomeProfile.vesting_years || 4)) {
-        const vestingMonths = (incomeProfile.vesting_years || 4) * 12;
-        initialGrantUnits = (incomeProfile.initial_unvested_shares || 0) / vestingMonths;
+      // Initial grant — linear over vesting_years
+      if (yearsPassed < (ip.vesting_years || 4)) {
+        monthlyEquityVestUnits += (ip.initial_unvested_shares || 0) / ((ip.vesting_years || 4) * 12);
       }
-
-      // FIX #7: Refresher grants — allow prior-year grants (grantYear can be negative,
-      // meaning the grant was made before simulation start; Ryan has stacked grants from
-      // prior years already in flight). Use live_price (today's price) for historic grants.
-      const grantValue = incomeProfile.annual_equity_grant || 0;
-      let refresherUnits = 0;
-      const vestingPeriodYears = 4;
-
-      for (let i = 0; i < vestingPeriodYears; i++) {
-        const grantYear = Math.floor(yearsPassed) - i;
-        // grantYear >= 0: grant made after sim start → project price forward
-        // grantYear < 0:  grant made before sim start → use live_price as grant price
+      // Refresher grants — 4 stacking cohorts (allow pre-sim grants via negative grantYear)
+      const grantValue = ip.annual_equity_grant || 0;
+      for (let i = 0; i < 4; i++) {
+        const grantYear      = Math.floor(yearsPassed) - i;
         const grantTimeYears = Math.max(0, grantYear);
-        const projectedPrice = live_price * Math.pow(1 + config.market_assumptions.goog_growth_rate / 100, grantTimeYears);
-        const priceAtGrant   = Math.max(0.1, projectedPrice);
-
-        // Grant value: only grow for future grants, not past ones
+        const priceAtGrant   = Math.max(0.1, live_price * Math.pow(1 + config.market_assumptions.goog_growth_rate / 100, grantTimeYears));
         const grantValueAtTime = grantValue * Math.pow(1 + nominalIncomeGrowth, grantTimeYears);
-        const totalUnitsForGrant = grantValueAtTime / priceAtGrant;
-        refresherUnits += totalUnitsForGrant / 48; // 4-year vest → 48 monthly increments
+        monthlyEquityVestUnits += (grantValueAtTime / priceAtGrant) / 48;
       }
-
-      monthlyEquityVestUnits = initialGrantUnits + refresherUnits;
     }
-
     const annualRSUValue = monthlyEquityVestUnits * 12 * currentGoogPrice;
 
     // Jump grant
     const jumpGrantMonthlyGross = (phase === 'JUMP')
-      ? incomeProfile.jump_grant_monthly * salaryGrowthMultiplier
+      ? ip.jump_grant_monthly * salaryGrowthMultiplier : 0;
+    const annualJumpGrantValue  = jumpGrantMonthlyGross * 12;
+
+    // ── OPT #1: 401k pre-tax contributions ────────────────────────────────
+    // Reduces income tax; does NOT reduce FICA base.
+    // Catch-up contribution available at age 50.
+    const k401MaxAllowed = currentAge >= CATCHUP_AGE ? K401_LIMIT + CATCHUP_LIMIT : K401_LIMIT;
+    const annualK401 = (phase === 'GOOGLE' || phase === 'JUMP' || phase === 'BRIDGE')
+      ? Math.min(ip.annual_401k_contribution ?? K401_LIMIT, k401MaxAllowed, annualBaseSalary * 0.9)
       : 0;
-    const annualJumpGrantValue = jumpGrantMonthlyGross * 12;
+
+    // ── OPT #2: Itemized deductions for mortgage interest ─────────────────
+    // Federal: mortgage interest capped at $750k acquisition debt (post-2017 loans).
+    // NY state: follows federal mortgage interest deduction.
+    // SALT: capped at $10k federally (NY state: no cap for state deduction itself).
+    const hasMortgageNow = currentDate < mortgagePayoffDate && currentMortgage > 0;
+    const deductibleMortgagePct = hasMortgageNow
+      ? Math.min(1, FED_MORTGAGE_CAP / Math.max(1, currentMortgage))
+      : 0;
+    const annualMortgageInterest    = hasMortgageNow ? currentMortgage * (mortgageRate / 100) : 0;
+    const deductibleInterestFed     = annualMortgageInterest * deductibleMortgagePct;
+    const saltCapFed                = 10_000;
+    const totalItemizedFed          = deductibleInterestFed + saltCapFed;
+    // NY: same mortgage interest deduction; SALT adds back since state deduction is for state
+    const totalItemizedNY           = deductibleInterestFed;
 
     // ── Tax calculation ────────────────────────────────────────────────────
-    // W2 ordinary income: salary + bonus + partner + RSUs + jump grant
+    // grossIncome = W2 (FICA base — full salary before 401k)
+    // preTaxDeductions = 401k (reduces income tax but not FICA)
     const annualW2Gross = annualBaseSalary + annualTargetBonus + annualPartnerGross + annualRSUValue + annualJumpGrantValue;
 
     const taxResult = calculateTax({
-      filingStatus:       config.tax_assumptions.filing_status,
-      state:              config.tax_assumptions.state_of_residence,
-      grossIncome:        annualW2Gross,
-      ficaExemptIncome:   annualRentalGross,  // FIX #6: rental not subject to FICA
+      filingStatus:          config.tax_assumptions.filing_status,
+      state:                 config.tax_assumptions.state_of_residence,
+      grossIncome:           annualW2Gross,
+      preTaxDeductions:      annualK401,
+      ficaExemptIncome:      annualRentalGross,
+      itemizedDeductions:    totalItemizedFed,
+      nyItemizedDeductions:  totalItemizedNY,
       longTermCapitalGains:  0,
       shortTermCapitalGains: 0,
     });
 
-    // FIX #5: Use ordinaryEffectiveRate (not blended MAGI rate) for salary/bonus/rental
     const ordinaryEffRate = taxResult.ordinaryEffectiveRate;
-    // FIX #4: Use marginalRate for RSU vesting (taxed at top marginal bracket)
     const marginalRate    = taxResult.marginalRate;
 
-    // ── Net monthly cash flows ─────────────────────────────────────────────
-    const isBonusMonth        = (month % 12 === 2); // March payout
-    const monthlySalaryNet    = (annualBaseSalary    / 12) * (1 - ordinaryEffRate);
-    const monthlyBonusNet     = isBonusMonth ? annualTargetBonus * (1 - ordinaryEffRate) : 0;
-    const monthlyPartnerNet   = (annualPartnerGross  / 12) * (1 - ordinaryEffRate);
-    const monthlyRentalNet    = (annualRentalGross   / 12) * (1 - ordinaryEffRate);
+    // ── Net cash flows ─────────────────────────────────────────────────────
+    const isBonusMonth     = (month % 12 === 2);
+    // Salary net = (salary minus 401k contribution) after tax; 401k goes to tradBalance
+    const taxableSalary    = Math.max(0, annualBaseSalary - annualK401);
+    const monthlySalaryNet = (taxableSalary / 12) * (1 - ordinaryEffRate);
+    const monthlyBonusNet  = isBonusMonth ? annualTargetBonus * (1 - ordinaryEffRate) : 0;
+    const monthlyPartnerNet = (annualPartnerGross / 12) * (1 - ordinaryEffRate);
+    const monthlyRentalNet  = (annualRentalGross  / 12) * (1 - ordinaryEffRate);
 
-    const monthlyOrdinayNet = monthlySalaryNet + monthlyBonusNet + monthlyPartnerNet + monthlyRentalNet;
+    // 401k contribution goes directly to traditional retirement each month
+    tradBalance += annualK401 / 12;
 
-    // FIX #4: RSU shares added at marginal (not effective) rate
+    // OPT #1 (Backdoor Roth IRA) — $7k/yr ($8k if 50+), funded from liquid cash in April
+    // Non-deductible contribution → immediate conversion → no current-year tax
+    const rothIRALimit    = currentAge >= CATCHUP_AGE ? 8_000 : 7_000;
+    const backdoorRothAmt = ip.annual_backdoor_roth ?? rothIRALimit;
+    if (monthOfYear === 3 && (phase === 'GOOGLE' || phase === 'JUMP' || phase === 'BRIDGE')
+        && liquidCash > backdoorRothAmt + 10_000) {
+      liquidCash  -= backdoorRothAmt;
+      rothBalance += backdoorRothAmt; // Now in Roth — grows tax-free
+    }
+
+    // RSU shares — added at marginal (not effective) rate, sell-to-cover approximation
     if (monthlyEquityVestUnits > 0) {
       const netNewShares = monthlyEquityVestUnits * (1 - marginalRate);
       currentGoogShares += netNewShares;
@@ -336,15 +396,61 @@ export const runSimulation = (
       currentJumpStockValue += jumpGrantMonthlyGross * (1 - marginalRate);
     }
 
+    const monthlyOrdinaryNet = monthlySalaryNet + monthlyBonusNet + monthlyPartnerNet + monthlyRentalNet;
+
+    // ── OPT #3: Roth conversion during sabbatical ─────────────────────────
+    // Strategy: during sabbatical (low income), convert from traditional 401k to Roth
+    // up to the target bracket. Paying ~22-32% combined now vs ~50% at full Google income later.
+    let rothConversionTaxPaid = 0;
+    if (phase === 'SABBATICAL' && (opt?.enable_roth_conversion ?? true) && tradBalance > 1_000) {
+      // Current ordinary taxable income (rental after std deduction)
+      const currentTaxableOrdinary = Math.max(0, annualRentalGross - 30_000);
+      const targetBracketCeiling   = opt?.roth_conversion_target_bracket ?? 206_700; // 22% bracket top for MFJ
+      const annualConversionRoom   = Math.max(0, targetBracketCeiling - currentTaxableOrdinary);
+
+      if (annualConversionRoom > 1_000) {
+        // Convert up to 80% of available room (leave some buffer for income fluctuations)
+        const monthlyConversion = Math.min(annualConversionRoom * 0.8 / 12, tradBalance * 0.02);
+
+        if (monthlyConversion > 100) {
+          // Tax: treat conversion as additional ordinary income stacked on rental
+          const baseConvTax = calculateTax({
+            filingStatus: config.tax_assumptions.filing_status,
+            state: config.tax_assumptions.state_of_residence,
+            grossIncome: 0,
+            ficaExemptIncome: annualRentalGross,
+            itemizedDeductions: totalItemizedFed,
+            nyItemizedDeductions: totalItemizedNY,
+            longTermCapitalGains: 0, shortTermCapitalGains: 0,
+          });
+          const withConvTax = calculateTax({
+            filingStatus: config.tax_assumptions.filing_status,
+            state: config.tax_assumptions.state_of_residence,
+            grossIncome: 0,
+            ficaExemptIncome: annualRentalGross + monthlyConversion * 12,
+            itemizedDeductions: totalItemizedFed,
+            nyItemizedDeductions: totalItemizedNY,
+            longTermCapitalGains: 0, shortTermCapitalGains: 0,
+          });
+          const monthlyTaxOnConversion = (withConvTax.totalTax - baseConvTax.totalTax) / 12;
+
+          if (liquidCash > monthlyTaxOnConversion + 5_000) {
+            tradBalance -= monthlyConversion;
+            rothBalance += monthlyConversion; // Moved from traditional → Roth
+            liquidCash  -= monthlyTaxOnConversion; // Tax paid from cash NOW
+            rothConversionTaxPaid = monthlyTaxOnConversion;
+          }
+        }
+      }
+    }
+
     // ── Expenses ───────────────────────────────────────────────────────────
-    const emptyNestYear  = config.spending.empty_nest_year ?? 3_000;
+    const emptyNestYear = config.spending.empty_nest_year ?? 3_000;
     const baseMonthlySpend = (currentYear >= emptyNestYear && config.spending.empty_nest_monthly_spend)
       ? config.spending.empty_nest_monthly_spend
       : config.spending.monthly_lifestyle;
 
     let expense = baseMonthlySpend * inflationMultiplier;
-
-    const currentAge = currentYear - (config.birth_year || 1980);
 
     // Social Security
     let socialSecurityIncome = 0;
@@ -355,10 +461,9 @@ export const runSimulation = (
 
     // Healthcare
     let currentHealthcareCost = 0;
-    const partnerIsWorking = incomeProfile.use_partner_income &&
-      incomeProfile.partner_has_health_insurance &&
+    const partnerIsWorking = ip.use_partner_income && ip.partner_has_health_insurance &&
       currentYear >= partnerStarts && currentYear < partnerRetires;
-    const bridgeCovered = (phase === 'BRIDGE') && !!incomeProfile.bridge_has_health_insurance;
+    const bridgeCovered = (phase === 'BRIDGE') && !!ip.bridge_has_health_insurance;
     const hasEmployerCoverage = phase === 'GOOGLE' || phase === 'JUMP' || partnerIsWorking || bridgeCovered;
 
     if (!hasEmployerCoverage) {
@@ -367,6 +472,25 @@ export const runSimulation = (
       } else {
         currentHealthcareCost = config.spending.healthcare_premium * inflationMultiplier;
       }
+
+      // OPT #4: ACA subsidies during low-income phases (sabbatical + pre-Medicare retirement)
+      // During sabbatical with only rental income, family likely qualifies for premium tax credits.
+      const isLowIncomePhase = phase === 'SABBATICAL'
+        || (phase === 'RETIRED' && currentAge < (config.medicare?.start_age ?? 65));
+
+      if (isLowIncomePhase && (opt?.enable_aca_optimization ?? true)) {
+        const familySize   = opt?.aca_family_size ?? 4;
+        const fpl          = getFPL(familySize) * inflationMultiplier; // Index FPL with inflation
+        const magiForACA   = annualRentalGross + socialSecurityIncome * 12 * 0.85; // SS 85% taxable
+        const fplRatio     = magiForACA / fpl;
+        const benchmarkMo  = (opt?.aca_benchmark_monthly_premium ?? 2_500) * inflationMultiplier;
+        const maxContribPct = acaMaxContributionPct(fplRatio);
+        const maxMonthly   = (magiForACA * maxContribPct) / 12;
+        const subsidy      = Math.max(0, benchmarkMo - maxMonthly);
+        // Subsidy reduces effective out-of-pocket healthcare cost
+        currentHealthcareCost = Math.max(maxMonthly, currentHealthcareCost - subsidy);
+      }
+
       expense += currentHealthcareCost;
     }
 
@@ -375,29 +499,25 @@ export const runSimulation = (
     if (hasMortgage) {
       expense += config.spending.mortgage_payment;
       if (currentMortgage > 0) {
-        const monthlyRate      = (mortgageRate / 100) / 12;
-        const interestPayment  = currentMortgage * monthlyRate;
-        const principalPayment = config.spending.mortgage_payment - interestPayment;
-        if (principalPayment > 0) currentMortgage -= principalPayment;
+        const mRate = (mortgageRate / 100) / 12;
+        const interest  = currentMortgage * mRate;
+        const principal = config.spending.mortgage_payment - interest;
+        if (principal > 0) currentMortgage -= principal;
         if (currentMortgage < 0) currentMortgage = 0;
       }
     }
 
-    // FIX #3: Life events — each college event represents ONE year of tuition,
-    // paid in January of that year. No more 4-year spreading.
+    // Life events — each event pays in January of its year
     if (config.life_events) {
       for (const event of config.life_events) {
-        if (event.year === currentYear && currentDate.getMonth() === 0) {
+        if (event.year === currentYear && monthOfYear === 0) {
           const inflatedCost = event.cost * inflationMultiplier;
-          const isCollege    = event.name.toLowerCase().includes('college');
-          if (isCollege) {
-            // Draw from 529 first, then cash
+          if (event.name.toLowerCase().includes('college')) {
             if (current529 >= inflatedCost) {
               current529 -= inflatedCost;
             } else {
-              const remaining = inflatedCost - current529;
+              expense += inflatedCost - current529;
               current529 = 0;
-              expense += remaining;
             }
           } else {
             expense += inflatedCost;
@@ -414,7 +534,7 @@ export const runSimulation = (
       }
     }
 
-    // ── Divestment (progressive or immediate) ─────────────────────────────
+    // ── Divestment ─────────────────────────────────────────────────────────
     let divestmentProceeds = 0;
 
     if (config.divestment_strategy.type === 'progressive') {
@@ -426,47 +546,40 @@ export const runSimulation = (
         const sharesToSell    = currentGoogShares / remainingMonths;
         const grossSale       = sharesToSell * currentGoogPrice;
 
-        const totalBasis  = currentGoogByBasis.reduce((a, b) => a + b.shares * b.basis, 0);
-        const totalShares = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
-        const avgBasis    = totalShares > 0 ? totalBasis / totalShares : 0;
-        const capGain     = Math.max(0, grossSale - sharesToSell * avgBasis);
+        const totalBasis = currentGoogByBasis.reduce((a, b) => a + b.shares * b.basis, 0);
+        const totalSh    = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
+        const avgBasis   = totalSh > 0 ? totalBasis / totalSh : 0;
+        const capGain    = Math.max(0, grossSale - sharesToSell * avgBasis);
+        const annualLTCG = capGain * 12;
 
-        // Tax on annualized LTCG (stacked on ordinary income)
-        const annualOrdinary = annualW2Gross + annualRentalGross;
-        const annualLTCG     = capGain * 12;
+        const annualOrd  = annualW2Gross + annualRentalGross;
+        const baseTax    = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualW2Gross, preTaxDeductions: annualK401, ficaExemptIncome: annualRentalGross, itemizedDeductions: totalItemizedFed, nyItemizedDeductions: totalItemizedNY, longTermCapitalGains: 0, shortTermCapitalGains: 0 });
+        const withSaleTax = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualW2Gross, preTaxDeductions: annualK401, ficaExemptIncome: annualRentalGross, itemizedDeductions: totalItemizedFed, nyItemizedDeductions: totalItemizedNY, longTermCapitalGains: annualLTCG, shortTermCapitalGains: 0 });
 
-        const baseTax    = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualOrdinary, ficaExemptIncome: annualRentalGross, longTermCapitalGains: 0, shortTermCapitalGains: 0 });
-        const withSaleTax = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualOrdinary, ficaExemptIncome: annualRentalGross, longTermCapitalGains: annualLTCG, shortTermCapitalGains: 0 });
-
-        const divestmentTax = (withSaleTax.totalTax - baseTax.totalTax) / 12;
-        divestmentProceeds  = grossSale - divestmentTax;
-        currentGoogShares  -= sharesToSell;
+        divestmentProceeds = grossSale - (withSaleTax.totalTax - baseTax.totalTax) / 12;
+        currentGoogShares -= sharesToSell;
       }
 
     } else if (config.divestment_strategy.type === 'immediate') {
-      const isExitTime = (currentYear === config.career_path.exit_year && monthOfYear === 0);
-      if (isExitTime && currentGoogShares > 0) {
+      if (currentYear === config.career_path.exit_year && monthOfYear === 0 && currentGoogShares > 0) {
         const grossProceeds = currentGoogShares * currentGoogPrice;
         const totalBasis    = currentGoogByBasis.reduce((a, b) => a + b.shares * b.basis, 0);
-        const totalShares   = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
-        const avgBasis      = totalShares > 0 ? totalBasis / totalShares : 0;
+        const totalSh       = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
+        const avgBasis      = totalSh > 0 ? totalBasis / totalSh : 0;
         const gain          = Math.max(0, grossProceeds - currentGoogShares * avgBasis);
 
-        const annualOrdinary = annualW2Gross + annualRentalGross;
-        const baseTax     = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualOrdinary, ficaExemptIncome: annualRentalGross, longTermCapitalGains: 0,    shortTermCapitalGains: 0 });
-        const withSaleTax  = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualOrdinary, ficaExemptIncome: annualRentalGross, longTermCapitalGains: gain, shortTermCapitalGains: 0 });
+        const baseTax     = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualW2Gross, preTaxDeductions: annualK401, ficaExemptIncome: annualRentalGross, itemizedDeductions: totalItemizedFed, nyItemizedDeductions: totalItemizedNY, longTermCapitalGains: 0,    shortTermCapitalGains: 0 });
+        const withSaleTax = calculateTax({ filingStatus: config.tax_assumptions.filing_status, state: config.tax_assumptions.state_of_residence, grossIncome: annualW2Gross, preTaxDeductions: annualK401, ficaExemptIncome: annualRentalGross, itemizedDeductions: totalItemizedFed, nyItemizedDeductions: totalItemizedNY, longTermCapitalGains: gain, shortTermCapitalGains: 0 });
 
-        const divestmentTax = withSaleTax.totalTax - baseTax.totalTax;
-        divestmentProceeds  = grossProceeds - divestmentTax;
-        currentGoogShares   = 0;
+        divestmentProceeds = grossProceeds - (withSaleTax.totalTax - baseTax.totalTax);
+        currentGoogShares  = 0;
       }
     }
 
     liquidCash += divestmentProceeds;
 
-    // ── Net cash flow ──────────────────────────────────────────────────────
-    const netFlow = monthlyOrdinayNet - expense;
-    liquidCash += netFlow;
+    // ── Net flow ───────────────────────────────────────────────────────────
+    liquidCash += monthlyOrdinaryNet - expense;
 
     // Consumer debt paydown when flush
     if (liquidCash > 50_000 && currentConsumerDebt > 0) {
@@ -479,84 +592,90 @@ export const runSimulation = (
     if (liquidCash < 0) {
       const deficit = Math.abs(liquidCash);
       liquidCash = 0;
+      const emergencyTaxRate = Math.min(0.55, marginalRate + 0.05);
 
-      // Use marginal rate for emergency sale tax estimate
-      const emergencyTaxRate = Math.min(0.55, marginalRate + 0.05); // cap at 55%
-
-      const totalBasis  = currentGoogByBasis.reduce((a, b) => a + b.shares * b.basis, 0);
-      const totalShares = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
-      const avgBasis    = totalShares > 0 ? totalBasis / totalShares : 0;
-      const netPerShare = currentGoogPrice - (emergencyTaxRate * Math.max(0, currentGoogPrice - avgBasis));
+      const totalBasis = currentGoogByBasis.reduce((a, b) => a + b.shares * b.basis, 0);
+      const totalSh    = currentGoogByBasis.reduce((a, b) => a + b.shares, 0);
+      const avgBasis   = totalSh > 0 ? totalBasis / totalSh : 0;
+      const netPerShare = currentGoogPrice - emergencyTaxRate * Math.max(0, currentGoogPrice - avgBasis);
 
       if (currentGoogShares * netPerShare >= deficit) {
         currentGoogShares -= deficit / Math.max(0.01, netPerShare);
       } else {
-        const proceed = currentGoogShares * netPerShare;
+        let remaining = deficit - currentGoogShares * netPerShare;
         currentGoogShares = 0;
-        let remaining = deficit - proceed;
-        if (currentJumpStockValue * 0.75 >= remaining) {
-          currentJumpStockValue -= remaining / 0.75;
+        // Draw from Roth first (tax-free), then traditional (with tax drag)
+        if (rothBalance * 1.0 >= remaining) {
+          rothBalance -= remaining;
         } else {
-          remaining -= currentJumpStockValue * 0.75;
-          currentJumpStockValue = 0;
-          retirement -= remaining / 0.70; // ~30% tax + penalty on retirement withdrawal
+          remaining -= rothBalance;
+          rothBalance = 0;
+          if (currentJumpStockValue * 0.75 >= remaining) {
+            currentJumpStockValue -= remaining / 0.75;
+          } else {
+            remaining -= currentJumpStockValue * 0.75;
+            currentJumpStockValue = 0;
+            tradBalance -= remaining / 0.70; // ~30% effective tax on traditional withdrawal
+          }
         }
       }
     }
 
     // ── Derived values ────────────────────────────────────────────────────
+    const totalRetirement  = tradBalance + rothBalance;
     const currentGoogValue = Math.max(0, currentGoogShares * currentGoogPrice);
     const totalLiabilities = currentMortgage + currentConsumerDebt;
 
-    // FIX #2: Net worth properly subtracts all liabilities
-    const totalNetWorth = liquidCash + retirement + currentGoogValue
+    // Net worth properly subtracts liabilities
+    const totalNetWorth = liquidCash + totalRetirement + currentGoogValue
       + currentJumpStockValue + totalOtherInvestmentsValue + current529
       - currentMortgage - currentConsumerDebt;
 
-    const investableAssets = liquidCash + retirement + currentGoogValue
+    const investableAssets = liquidCash + totalRetirement + currentGoogValue
       + currentJumpStockValue + totalOtherInvestmentsValue;
 
-    // FIX #9: SWR target uses normalized retirement-phase spending (no mortgage,
-    // no one-time events — those are temporary). This prevents college tuition
-    // spikes from creating false "not FI" signals during the accumulation years.
-    const swrBaseSpend = (baseMonthlySpend + currentHealthcareCost) * inflationMultiplier;
-    const taxDrag      = phase === 'RETIRED' ? 0.20 : 0.25;
+    // SWR target uses normalized retirement spending (no mortgage, no one-time events).
+    // Roth assets can be withdrawn tax-free → lower effective tax drag.
+    const rothFraction = investableAssets > 0 ? rothBalance / investableAssets : 0;
+    const effectiveTaxDrag = phase === 'RETIRED'
+      ? 0.20 * (1 - rothFraction)  // Roth withdrawals incur 0% tax drag
+      : 0.25;
+    const swrBaseSpend      = (baseMonthlySpend + currentHealthcareCost) * inflationMultiplier;
     const rawSWRTarget      = (swrBaseSpend * 12) / 0.04;
-    const adjustedSWRTarget = rawSWRTarget / (1 - taxDrag);
+    const adjustedSWRTarget = rawSWRTarget / Math.max(0.5, 1 - effectiveTaxDrag);
 
-    const isIndependent = adjustedSWRTarget > 0 && (investableAssets / adjustedSWRTarget) >= 1.0;
+    const isIndependent = adjustedSWRTarget > 0 && investableAssets / adjustedSWRTarget >= 1.0;
 
-    // ── Charting fields ───────────────────────────────────────────────────
-    const equityPart = monthlyEquityVestUnits > 0
-      ? monthlyEquityVestUnits * (1 - marginalRate) * currentGoogPrice
-      : 0;
-    const jumpStockPart = jumpGrantMonthlyGross > 0
-      ? jumpGrantMonthlyGross * (1 - marginalRate)
-      : 0;
+    // ── Chart fields ──────────────────────────────────────────────────────
+    const equityPart    = monthlyEquityVestUnits > 0 ? monthlyEquityVestUnits * (1 - marginalRate) * currentGoogPrice : 0;
+    const jumpStockPart = jumpGrantMonthlyGross  > 0 ? jumpGrantMonthlyGross  * (1 - marginalRate) : 0;
 
-    const annualizedComp =
-      (monthlyOrdinayNet + equityPart + jumpStockPart + socialSecurityIncome) * 12;
-
-    const currentMortgagePayment = hasMortgage ? config.spending.mortgage_payment : 0;
-    const currentLifestyle       = baseMonthlySpend * inflationMultiplier;
+    const salaryAndEquityNet = (monthlySalaryNet + monthlyBonusNet + monthlyPartnerNet + equityPart + jumpStockPart) * 12;
+    const rentalIncomeNet    = monthlyRentalNet * 12;
+    const socialSecurityNet  = socialSecurityIncome * 12;
+    const annualizedComp     = salaryAndEquityNet + rentalIncomeNet + socialSecurityNet;
 
     points.push({
       date:       currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }),
       monthIndex: month,
       liquidCash: Math.round(liquidCash),
-      retirement: Math.round(retirement),
+      retirement: Math.round(totalRetirement),
+      rothBalance: Math.round(rothBalance),
       googValue:  Math.round(currentGoogValue),
       totalNetWorth:    Math.round(totalNetWorth),
       totalLiabilities: Math.round(totalLiabilities),
       isIndependent,
       swrTarget:  Math.round(adjustedSWRTarget),
       currentPhase: phase,
+      salaryAndEquityNet: Math.round(salaryAndEquityNet),
+      rentalIncomeNet:    Math.round(rentalIncomeNet),
+      socialSecurityNet:  Math.round(socialSecurityNet),
+      totalCompensation:  Math.round(annualizedComp),
       rentalIncome:       Math.round(rentalIncome * 12),
       healthcareCost:     Math.round(currentHealthcareCost * 12),
-      totalCompensation:  Math.round(annualizedComp),
       accumulatedReturns: 0,
-      mortgagePayment:    Math.round(currentMortgagePayment * 12),
-      lifestyleExpense:   Math.round(currentLifestyle * 12),
+      mortgagePayment:    Math.round((hasMortgage ? config.spending.mortgage_payment : 0) * 12),
+      lifestyleExpense:   Math.round(baseMonthlySpend * inflationMultiplier * 12),
       socialSecurityIncome: Math.round(socialSecurityIncome * 12),
       educationAssets:    Math.round(current529),
     });

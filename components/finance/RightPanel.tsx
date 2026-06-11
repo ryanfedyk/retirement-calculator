@@ -177,13 +177,15 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   // Chart data
   const chartData = useMemo(() => trajectoryData.map((pt, i) => ({
     ...pt,
-    earlierNetWorth:   earlierData[i]?.totalNetWorth   ?? 0,
-    laterNetWorth:     laterData[i]?.totalNetWorth     ?? 0,
-    salaryAndEquity:   pt.totalCompensation - pt.rentalIncome - (pt.socialSecurityIncome || 0),
-    socialSecurity:    pt.socialSecurityIncome || 0,
-    lifestyleExpense:  pt.lifestyleExpense || 0,
-    healthcareCost:    pt.healthcareCost || 0,
-    mortgagePayment:   pt.mortgagePayment || 0,
+    earlierNetWorth:  earlierData[i]?.totalNetWorth ?? 0,
+    laterNetWorth:    laterData[i]?.totalNetWorth   ?? 0,
+    // Use the pre-computed net fields — no subtraction, no negatives
+    salaryAndEquity:  pt.salaryAndEquityNet,
+    rentalNet:        pt.rentalIncomeNet,
+    socialSecurity:   pt.socialSecurityNet,
+    lifestyleExpense: pt.lifestyleExpense || 0,
+    healthcareCost:   pt.healthcareCost   || 0,
+    mortgagePayment:  pt.mortgagePayment  || 0,
   })), [trajectoryData, earlierData, laterData]);
 
   // Reference lines for phases / milestones
@@ -226,43 +228,16 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   return (
     <main style={{ flex: 1, background: C.bg, padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* ── Live price bar ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        {/* Portfolio live prices — one chip per holding */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {(enrichedSnapshot.other_investments ?? []).map(inv => {
-            const info = livePrices[inv.symbol.toUpperCase()];
-            const isLive = info?.source === "yahoo";
-            return (
-              <div key={inv.id} style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: C.bgCard, border: `1px solid ${C.border}`,
-                borderRadius: 12, padding: "4px 10px",
-              }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: isLive ? C.teal : C.warm, flexShrink: 0 }} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: C.inkMid }}>{inv.symbol}</span>
-                <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", color: C.ink }}>
-                  {info ? `$${info.price.toFixed(2)}` : "–"}
-                </span>
-                <span style={{ fontSize: 9, color: C.inkFaint }}>
-                  ×{inv.shares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </span>
-                <span style={{ fontSize: 9, fontWeight: 600, color: C.tealDark }}>
-                  = ${(inv.shares * (info?.price ?? inv.current_price)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Refresh + timestamp */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 14px", flexShrink: 0 }}>
+      {/* ── GOOG price bar ── */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 16px" }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: priceStatus === "live" ? C.teal : C.warm, boxShadow: priceStatus === "live" ? `0 0 6px ${C.teal}` : "none" }} />
-          <span style={{ fontSize: 10, fontWeight: 600, color: C.inkMid }}>
-            {priceStatus === "live" ? "Live" : priceStatus === "loading" ? "Loading…" : "Delayed"}
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.inkMid }}>GOOG</span>
+          <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", color: C.ink }}>
+            {liveGoogPrice > 0 ? `$${liveGoogPrice.toFixed(2)}` : "–"}
           </span>
           {pricesUpdatedAt && (
-            <span style={{ fontSize: 9, color: C.inkFaint }}>
+            <span style={{ fontSize: 9, color: C.inkFaint, letterSpacing: "0.03em" }}>
               as of {pricesUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
@@ -386,9 +361,9 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
 
                 {chartView === "income" && (
                   <>
-                    <Area type="monotone" dataKey="salaryAndEquity" stackId="1" stroke={C.teal}     fill={C.teal}     fillOpacity={0.7} name="Salary & Equity" />
-                    <Area type="monotone" dataKey="rentalIncome"    stackId="1" stroke="#4aab92"    fill="#4aab92"    fillOpacity={0.7} name="Rental Income" />
-                    <Area type="monotone" dataKey="socialSecurity"  stackId="1" stroke={C.warm}     fill={C.warm}     fillOpacity={0.7} name="Social Security" />
+                    <Area type="monotone" dataKey="salaryAndEquity" stackId="1" stroke={C.teal}    fill={C.teal}    fillOpacity={0.7} name="Salary & Equity" />
+                    <Area type="monotone" dataKey="rentalNet"       stackId="1" stroke="#4aab92"   fill="#4aab92"   fillOpacity={0.7} name="Rental Income" />
+                    <Area type="monotone" dataKey="socialSecurity"  stackId="1" stroke={C.warm}    fill={C.warm}    fillOpacity={0.7} name="Social Security" />
                   </>
                 )}
 

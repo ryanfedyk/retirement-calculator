@@ -7,7 +7,7 @@ const FALLBACK_PRICES: Record<string, number> = {
   VFIAX: 520.00,
   VGHCX:  95.00,
   VSEQX:  48.00,
-  VTIVX:  38.00,
+  VTIVX:  42.00,
   SPY:   530.00,
   QQQ:   460.00,
 };

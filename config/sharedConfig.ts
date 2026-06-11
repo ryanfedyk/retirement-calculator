@@ -56,14 +56,14 @@ export const DEFAULT_SNAPSHOT: FinancialSnapshot = {
     upcoming_capital_calls: 0,
   },
   other_investments: [
-    { id: "vti",   name: "VTI",   symbol: "VTI",   shares: 70.302,   cost_basis: 337,  current_price: 337,  expected_return: 7 },
-    { id: "vfiax", name: "VFIAX", symbol: "VFIAX", shares: 105.997,  cost_basis: 636,  current_price: 636,  expected_return: 7 },
-    { id: "vghcx", name: "VGHCX", symbol: "VGHCX", shares: 188.384,  cost_basis: 208,  current_price: 208,  expected_return: 7 },
-    { id: "vseqx", name: "VSEQX", symbol: "VSEQX", shares: 524.753,  cost_basis: 39,   current_price: 39,   expected_return: 7 },
-    {
-      id: "goog", name: "GOOG", symbol: "GOOG", shares: 1_054.84,
-      cost_basis: 304, current_price: 180, expected_return: 11.5,
-    },
+    { id: "vti",     name: "VTI",     symbol: "VTI",   shares: 70.302,   cost_basis: 0, current_price: 270, expected_return: 7   },
+    { id: "vfiax-1", name: "VFIAX",   symbol: "VFIAX", shares: 105.997,  cost_basis: 0, current_price: 520, expected_return: 7   },
+    { id: "vfiax-2", name: "VFIAX",   symbol: "VFIAX", shares: 18.289,   cost_basis: 0, current_price: 520, expected_return: 7   },
+    { id: "vfiax-3", name: "VFIAX",   symbol: "VFIAX", shares: 19.084,   cost_basis: 0, current_price: 520, expected_return: 7   },
+    { id: "vghcx",   name: "VGHCX",   symbol: "VGHCX", shares: 188.384,  cost_basis: 0, current_price: 95,  expected_return: 7   },
+    { id: "vseqx",   name: "VSEQX",   symbol: "VSEQX", shares: 524.753,  cost_basis: 0, current_price: 48,  expected_return: 7   },
+    { id: "vtivx",   name: "VTIVX",   symbol: "VTIVX", shares: 418.306,  cost_basis: 0, current_price: 38,  expected_return: 7   },
+    { id: "goog",    name: "GOOG",    symbol: "GOOG",  shares: 1_149.52, cost_basis: 0, current_price: 180, expected_return: 11.5 },
   ],
 };
 
@@ -99,17 +99,19 @@ export const DEFAULT_SIM_CONFIG: SimulationConfiguration = {
   income_profile: {
     gross_annual_salary:    303_524,
     google_net_monthly:     14_000,
-    initial_unvested_shares: 4_320.52,
+    initial_unvested_shares: 4_137,
     vesting_years:          4,
     jump_gross_annual:      200_000,
     jump_bonus_rate:        0.15,
     jump_grant_monthly:     5_000,
     bridge_gross_annual:    150_000,
     bridge_has_health_insurance: false,
-    income_growth_rate:     4,
+    income_growth_rate:     3,
     target_bonus_rate:      0.25,
-    annual_equity_grant:    250_000,
-    monthly_rental_income:  0,
+    annual_equity_grant:    300_000,
+    monthly_rental_income:  5_000,
+    annual_401k_contribution: 23_500,   // IRS 2025 max; auto-bumped to $31k at age 50+
+    annual_backdoor_roth:     7_000,    // Backdoor Roth IRA (non-deductible → immediate conversion)
     use_partner_income:     false,
     partner_gross_annual_salary: 0,
     partner_employment_start_year: 2025,
@@ -132,9 +134,9 @@ export const DEFAULT_SIM_CONFIG: SimulationConfiguration = {
     end_year:   2030,
   },
   spending: {
-    monthly_lifestyle:         8_750,
+    monthly_lifestyle:         9_500,
     empty_nest_year:           2039,
-    empty_nest_monthly_spend:  4_750,
+    empty_nest_monthly_spend:  7_000,
     healthcare_premium:        2_500,
     mortgage_payment:          7_435.67,
   },
@@ -146,6 +148,13 @@ export const DEFAULT_SIM_CONFIG: SimulationConfiguration = {
   medicare: {
     start_age:      65,
     monthly_premium: 174.70,
+  },
+  tax_optimization: {
+    enable_aca_optimization:       true,
+    aca_family_size:               4,       // Ryan + spouse + 2 kids
+    aca_benchmark_monthly_premium: 2_500,   // Silver benchmark in NYC area
+    enable_roth_conversion:        true,    // Convert trad 401k during sabbatical
+    roth_conversion_target_bracket: 206_700, // Top of 22% bracket for MFJ 2025
   },
   life_events: buildLifeEvents(),
 };
