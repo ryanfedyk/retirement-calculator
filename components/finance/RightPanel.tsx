@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
@@ -10,6 +10,7 @@ import { runSimulation } from "@/engine/calculator";
 import type { TrajectoryPoint } from "@/engine/calculator";
 import { C } from "@/config/colors";
 import LifeCalendar from "./LifeCalendar";
+import type { LivePrices } from "./FinancialDashboard";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,14 +104,19 @@ const ChartTooltip = ({ active, payload, label, birthYear }: any) => {
   );
 };
 
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+interface Props {
+  livePrices:       LivePrices;
+  pricesUpdatedAt:  Date | null;
+  pricesFetching:   boolean;
+  onRefreshPrices:  () => void;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-export default function RightPanel() {
+export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching, onRefreshPrices }: Props) {
   const { snapshot, config } = useFinancialStore();
-  const [livePrice, setLivePrice] = useState(0);
-  const [priceStatus, setPriceStatus] = useState<"loading" | "live" | "fallback">("loading");
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [chartView, setChartView] = useState<ChartView>("wealth");
 
   // AI Analysis
@@ -128,28 +134,37 @@ export default function RightPanel() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  const fetchPrice = async () => {
-    try {
-      setRefreshing(true);
-      const res  = await fetch("/api/quote/GOOG");
-      const data = await res.json();
-      setLivePrice(data.price ?? 0);
-      setPriceStatus(data.source === "yahoo" ? "live" : "fallback");
-      setLastUpdated(new Date());
-    } catch { setPriceStatus("fallback"); } finally { setRefreshing(false); }
-  };
+  // ── Derive live GOOG price and overall price status ───────────────────────
+  const googInfo     = livePrices["GOOG"] ?? livePrices["GOOGL"];
+  const liveGoogPrice = googInfo?.price ?? 0;
+  const priceStatus   = !googInfo
+    ? "loading"
+    : googInfo.source === "yahoo" ? "live" : "fallback";
 
-  useEffect(() => { fetchPrice(); }, []);
+  // ── Enrich snapshot with live prices for ALL holdings ────────────────────
+  // This is what the simulation engine actually sees — never stale.
+  const enrichedSnapshot = useMemo(() => ({
+    ...snapshot,
+    other_investments: (snapshot.other_investments ?? []).map(inv => {
+      const info = livePrices[inv.symbol.toUpperCase()];
+      return info ? { ...inv, current_price: info.price } : inv;
+    }),
+  }), [snapshot, livePrices]);
 
-  // Main simulation
+  // ── Simulations (all use enriched snapshot) ───────────────────────────────
   const trajectoryData = useMemo(
-    () => runSimulation(snapshot, config, livePrice),
-    [snapshot, config, livePrice]
+    () => runSimulation(enrichedSnapshot, config, liveGoogPrice),
+    [enrichedSnapshot, config, liveGoogPrice]
   );
 
-  // +1 / −1 year comparison
-  const earlierData = useMemo(() => runSimulation(snapshot, { ...config, career_path: { ...config.career_path, exit_year: config.career_path.exit_year - 1 } }, livePrice), [snapshot, config, livePrice]);
-  const laterData   = useMemo(() => runSimulation(snapshot, { ...config, career_path: { ...config.career_path, exit_year: config.career_path.exit_year + 1 } }, livePrice), [snapshot, config, livePrice]);
+  const earlierData = useMemo(() =>
+    runSimulation(enrichedSnapshot, { ...config, career_path: { ...config.career_path, exit_year: config.career_path.exit_year - 1 } }, liveGoogPrice),
+    [enrichedSnapshot, config, liveGoogPrice]
+  );
+  const laterData = useMemo(() =>
+    runSimulation(enrichedSnapshot, { ...config, career_path: { ...config.career_path, exit_year: config.career_path.exit_year + 1 } }, liveGoogPrice),
+    [enrichedSnapshot, config, liveGoogPrice]
+  );
 
   // Key metrics
   const indepPoint     = trajectoryData.find(d => d.isIndependent);
@@ -211,28 +226,49 @@ export default function RightPanel() {
   return (
     <main style={{ flex: 1, background: C.bg, padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* ── GOOG price bar ── */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 16px" }}>
+      {/* ── Live price bar ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        {/* Portfolio live prices — one chip per holding */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {(enrichedSnapshot.other_investments ?? []).map(inv => {
+            const info = livePrices[inv.symbol.toUpperCase()];
+            const isLive = info?.source === "yahoo";
+            return (
+              <div key={inv.id} style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: C.bgCard, border: `1px solid ${C.border}`,
+                borderRadius: 12, padding: "4px 10px",
+              }}>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: isLive ? C.teal : C.warm, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: C.inkMid }}>{inv.symbol}</span>
+                <span style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", color: C.ink }}>
+                  {info ? `$${info.price.toFixed(2)}` : "–"}
+                </span>
+                <span style={{ fontSize: 9, color: C.inkFaint }}>
+                  ×{inv.shares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+                <span style={{ fontSize: 9, fontWeight: 600, color: C.tealDark }}>
+                  = ${(inv.shares * (info?.price ?? inv.current_price)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Refresh + timestamp */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "6px 14px", flexShrink: 0 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: priceStatus === "live" ? C.teal : C.warm, boxShadow: priceStatus === "live" ? `0 0 6px ${C.teal}` : "none" }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: C.inkMid }}>LIVE GOOG</span>
-          <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", color: C.ink }}>
-            {livePrice > 0 ? `$${livePrice.toFixed(2)}` : "–"}
+          <span style={{ fontSize: 10, fontWeight: 600, color: C.inkMid }}>
+            {priceStatus === "live" ? "Live" : priceStatus === "loading" ? "Loading…" : "Delayed"}
           </span>
-          {lastUpdated && (
-            <span style={{ fontSize: 9, color: C.inkFaint, letterSpacing: "0.03em" }}>
-              as of {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {pricesUpdatedAt && (
+            <span style={{ fontSize: 9, color: C.inkFaint }}>
+              as of {pricesUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
-          <button onClick={fetchPrice} disabled={refreshing} style={{ background: "none", border: "none", cursor: "pointer", color: C.teal, display: "flex", alignItems: "center", padding: 0 }}>
-            <RefreshCw size={12} style={{ animation: refreshing ? "spin 1s linear infinite" : "none" }} />
+          <button onClick={onRefreshPrices} disabled={pricesFetching} style={{ background: "none", border: "none", cursor: "pointer", color: C.teal, display: "flex", alignItems: "center", padding: 0 }}>
+            <RefreshCw size={12} style={{ animation: pricesFetching ? "spin 1s linear infinite" : "none" }} />
           </button>
-          {snapshot.share_counts.google_shares > 0 && (
-            <>
-              <div style={{ width: 1, height: 12, background: C.border }} />
-              <span style={{ fontSize: 10, color: C.inkSoft }}>{snapshot.share_counts.google_shares.toFixed(2)} shares</span>
-            </>
-          )}
         </div>
       </div>
 

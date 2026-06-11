@@ -4,6 +4,7 @@ import { Sliders, RotateCcw, Wallet, Trash2, PlusCircle } from "lucide-react";
 import { useFinancialStore } from "@/store/useFinancialStore";
 import { C } from "@/config/colors";
 import { DEFAULT_SNAPSHOT, DEFAULT_SIM_CONFIG } from "@/config/sharedConfig";
+import type { LivePrices } from "./FinancialDashboard";
 
 // ── Styled primitives ─────────────────────────────────────────────────────────
 
@@ -82,11 +83,12 @@ const SectionDivider = () => (
 // ── InvestmentItem ────────────────────────────────────────────────────────────
 
 function InvestmentItem({
-  inv, onRemove, onUpdate,
+  inv, onRemove, onUpdate, liveInfo,
 }: {
   inv: any;
   onRemove: () => void;
   onUpdate: (v: any) => void;
+  liveInfo?: { price: number; source: "yahoo" | "fallback" };
 }) {
   const [editing, setEditing] = useState(false);
   const [sym, setSym] = useState(inv.symbol);
@@ -113,20 +115,45 @@ function InvestmentItem({
     </div>
   );
 
+  const displayPrice = liveInfo?.price ?? inv.current_price ?? 0;
+  const totalValue   = inv.shares * displayPrice;
+  const isLive       = liveInfo?.source === "yahoo";
+  const hasLive      = !!liveInfo;
+
   return (
-    <div className="group" style={{ background: C.warmWash, border: `1px solid ${C.warmLight}`, borderRadius: 7, padding: "8px 10px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>{inv.symbol}</div>
-        <div style={{ fontSize: 10, color: C.inkSoft }}>{inv.shares} shares{inv.expected_return != null ? ` · ${inv.expected_return}%` : ""}</div>
+    <div className="group" style={{ background: C.warmWash, border: `1px solid ${C.warmLight}`, borderRadius: 7, padding: "8px 10px", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>{inv.symbol}</span>
+            {hasLive && (
+              <span style={{
+                fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 99,
+                background: isLive ? C.tealWash : C.warmWash,
+                color: isLive ? C.tealDark : C.warm,
+                border: `1px solid ${isLive ? C.tealLight : C.warmLight}`,
+              }}>
+                {isLive ? "LIVE" : "DELAYED"}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: C.inkSoft, marginTop: 2 }}>
+            {inv.shares.toLocaleString(undefined, { maximumFractionDigits: 3 })} sh
+            {inv.expected_return != null ? ` · ${inv.expected_return}% return` : ""}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+            ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </div>
+          <div style={{ fontSize: 10, color: C.inkFaint, fontVariantNumeric: "tabular-nums" }}>
+            @${displayPrice.toFixed(2)}/sh
+          </div>
+        </div>
       </div>
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>
-          ${(inv.shares * (inv.current_price || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 2 }}>
-          <button onClick={() => setEditing(true)} style={{ fontSize: 10, color: C.teal, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
-          <button onClick={onRemove}              style={{ fontSize: 10, color: C.warm,  background: "none", border: "none", cursor: "pointer" }}>✕</button>
-        </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+        <button onClick={() => setEditing(true)} style={{ fontSize: 10, color: C.teal, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
+        <button onClick={onRemove}              style={{ fontSize: 10, color: C.warm,  background: "none", border: "none", cursor: "pointer" }}>✕</button>
       </div>
     </div>
   );
@@ -134,7 +161,7 @@ function InvestmentItem({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function LeftPanel() {
+export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices }) {
   const { config, snapshot, updateNestedConfig, updateNestedSnapshot, updateConfig, resetToDefaults } = useFinancialStore();
   const [newEvent, setNewEvent] = useState({ name: "", year: 2030, cost: 50_000 });
   const [newInvSym, setNewInvSym]   = useState("");
@@ -521,7 +548,7 @@ export default function LeftPanel() {
           <SectionHead color="#c4784e">Portfolio Holdings</SectionHead>
           <div style={{ marginBottom: 8 }}>
             {(snapshot.other_investments || []).map((inv, idx) => (
-              <InvestmentItem key={inv.id || idx} inv={inv}
+              <InvestmentItem key={inv.id || idx} inv={inv} liveInfo={livePrices[inv.symbol.toUpperCase()]}
                 onRemove={() => {
                   const arr = [...(snapshot.other_investments || [])];
                   arr.splice(idx, 1);
