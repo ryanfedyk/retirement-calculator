@@ -288,7 +288,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
       <div style={{
         background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12,
         display: "flex", flexDirection: "column",
-        height: chartView === "timeline" ? 580 : 460,
+        height: chartView === "timeline" ? 630 : 585,
         transition: "height 0.3s ease",
       }}>
         {/* Chart header */}
@@ -325,7 +325,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
           {chartView === "timeline" ? (
             <LifeCalendar data={trajectoryData} config={config} />
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={495}>
               <AreaChart data={chartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
@@ -411,7 +411,20 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
               body:    JSON.stringify({ config, snapshot, trajectory: trajectoryData }),
             });
             const data = await res.json();
-            setAnalysis(data.analysis);
+            if (!res.ok || !data.analysis) {
+              const detail = data.detail || data.error || "Unknown error.";
+              setAnalysis({
+                retirementStatus: "Needs Attention",
+                retirementExplanation: detail,
+                fiStatus: "Needs Attention",
+                fiExplanation: data.error || "Analysis unavailable.",
+                strengths: [],
+                risks: [detail],
+                tips: ["Update GEMINI_API_KEY in .env.local, then restart the dev server."],
+              });
+            } else {
+              setAnalysis(data.analysis);
+            }
           } catch {
             setAnalysis({
               retirementStatus: "Needs Attention",

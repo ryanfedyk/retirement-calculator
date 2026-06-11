@@ -10,6 +10,7 @@
  * "True Retirement Date" = after any post-Google phases (sabbatical / jump / bridge).
  * The flight map and countdown count down to the Google exit date.
  */
+import { useMemo } from "react";
 import { useFinancialStore } from "@/store/useFinancialStore";
 import { PERSONAL } from "@/config/sharedConfig";
 
@@ -22,9 +23,17 @@ export function useRetirementDate() {
   if (cp.use_jump)       trueYear += cp.jump_duration;
   if (cp.use_bridge)     trueYear += cp.bridge_duration;
 
-  // Month is kept from PERSONAL config (March = index 2)
-  const googleExitDate     = new Date(cp.exit_year, PERSONAL.retirementMonth, 1);
-  const trueRetirementDate = new Date(trueYear,      PERSONAL.retirementMonth, 1);
+  // Memoize Date objects on primitive deps so their references stay stable
+  // across renders. Without this, every render produces fresh Date instances,
+  // which breaks downstream useMemo/useEffect dependency checks (infinite loop).
+  const googleExitDate = useMemo(
+    () => new Date(cp.exit_year, PERSONAL.retirementMonth, 1),
+    [cp.exit_year]
+  );
+  const trueRetirementDate = useMemo(
+    () => new Date(trueYear, PERSONAL.retirementMonth, 1),
+    [trueYear]
+  );
 
   return {
     /** Date Ryan leaves Google — primary countdown / flight map target */

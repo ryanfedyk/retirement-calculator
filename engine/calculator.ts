@@ -626,10 +626,13 @@ export const runSimulation = (
     const currentGoogValue = Math.max(0, currentGoogShares * currentGoogPrice);
     const totalLiabilities = currentMortgage + currentConsumerDebt;
 
-    // Net worth properly subtracts liabilities
+    // Net worth excludes the mortgage: the offsetting primary-residence asset
+    // isn't tracked in the model, so subtracting the mortgage alone would
+    // understate net worth (drag it to ~$0). Consumer debt (no backing asset)
+    // is still netted out.
     const totalNetWorth = liquidCash + totalRetirement + currentGoogValue
       + currentJumpStockValue + totalOtherInvestmentsValue + current529
-      - currentMortgage - currentConsumerDebt;
+      - currentConsumerDebt;
 
     const investableAssets = liquidCash + totalRetirement + currentGoogValue
       + currentJumpStockValue + totalOtherInvestmentsValue;

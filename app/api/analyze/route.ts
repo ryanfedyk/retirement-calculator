@@ -3,12 +3,25 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// Current Gemini models, in order of preference. 1.5-flash is being retired,
+// so prefer 2.x and fall back gracefully on per-model errors (404/429/etc).
+const MODEL_CANDIDATES = [
+  "gemini-2.0-flash",
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+  "gemini-1.5-flash",
+];
+
 export async function POST(req: Request) {
   try {
-    const { config, snapshot, trajectory } = await req.json();
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: "Gemini API key not configured", detail: "Set GEMINI_API_KEY in .env.local" },
+        { status: 503 }
+      );
+    }
 
-    // Try flash models in order of preference / quota availability
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const { config, snapshot, trajectory } = await req.json();
 
     const currentYear = new Date().getFullYear();
 
@@ -66,8 +79,34 @@ Return ONLY raw JSON in this exact shape (no markdown, no code fences):
 }
 `;
 
-    const result       = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    // Try each candidate model until one succeeds.
+    let responseText = "";
+    let lastErr: any = null;
+    for (const modelName of MODEL_CANDIDATES) {
+      try {
+        const model  = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        responseText = result.response.text();
+        if (responseText) break;
+      } catch (e: any) {
+        lastErr = e;
+        console.warn(`Gemini model ${modelName} failed: ${e?.message}`);
+      }
+    }
+
+    if (!responseText) {
+      const msg = lastErr?.message || "All Gemini models failed";
+      const isAuth = /API key|PERMISSION_DENIED|leaked|API_KEY_INVALID/i.test(msg);
+      return NextResponse.json(
+        {
+          error: isAuth ? "Gemini API key invalid or revoked" : "Analysis failed",
+          detail: isAuth
+            ? "Your GEMINI_API_KEY was rejected (likely revoked/leaked). Generate a new key at aistudio.google.com/apikey and update .env.local."
+            : msg,
+        },
+        { status: isAuth ? 401 : 502 }
+      );
+    }
 
     let analysisData;
     try {
