@@ -11,6 +11,7 @@ import type { TrajectoryPoint } from "@/engine/calculator";
 import { C } from "@/config/colors";
 import LifeCalendar from "./LifeCalendar";
 import type { LivePrices } from "./FinancialDashboard";
+import { getLifeEvents } from "@/lib/horizonUtils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,6 +240,12 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
     for (const ev of config.life_events ?? []) {
       const x = findDate(p => p.date.includes(String(ev.year)));
       if (x) m.push({ x, stroke: "#b9895e", label: lifeEventLabel(ev.name), primary: false });
+    }
+    // Pre-retirement kids' milestones — same source the forecasting tab uses,
+    // so both views stay in sync for the pre-2030 window.
+    for (const ev of getLifeEvents()) {
+      const x = findDate(p => p.date.includes(String(ev.year)));
+      if (x) m.push({ x, stroke: C.tealLight, label: `${ev.icon} ${ev.childName}`, primary: false });
     }
     return m;
   })();
