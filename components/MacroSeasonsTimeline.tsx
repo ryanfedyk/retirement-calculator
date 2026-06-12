@@ -1,116 +1,84 @@
 "use client";
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { C } from "@/config/colors";
-import { HORIZON_CONFIG } from "@/config/horizonConfig";
-import {
-  getCurrentPhase,
-  getMonthsInCurrentPhase,
-  getMonthsUntilNextPhase,
-} from "@/lib/horizonUtils";
-import { useRetirementDate } from "@/hooks/useRetirementDate";
-
-const PHASE_ACTIONS: Record<number, { focus: string; actions: string[] }> = {
-  1: {
-    focus: "Remove yourself as the single point of failure.",
-    actions: [
-      "Document every key process you own — start this week.",
-      "Identify your three most capable direct reports and begin deliberate succession prep.",
-      "Stop being the default escalation path. Route decisions back downstream.",
-      "Replace 80% of ad-hoc interruptions with one structured 'office hours' block.",
-      "Write down what only you know. That list is your delegation backlog.",
-    ],
-  },
-  2: {
-    focus: "Force autonomy. Stop rescuing people from their own decisions.",
-    actions: [
-      "Remove yourself from at least two recurring meetings this month.",
-      "Let a decision made without you stand — even if imperfect. Resist the urge to correct it.",
-      "Stop responding to messages after 6pm. Permanently. No exceptions.",
-      "Measure your team's autonomy score, not your own heroism score.",
-      "Cancel one commitment per week that doesn't require you specifically.",
-    ],
-  },
-  3: {
-    focus: "Become the advisor, not the operator.",
-    actions: [
-      "Your calendar should carry 40% unscheduled white space. Protect it aggressively.",
-      "Begin the formal succession conversation with HR this quarter.",
-      "Ask 'What do you think?' instead of answering. Every single time.",
-      "Take one external advisory role as a bridge — board seat, mentor, consultant.",
-      "Start a private 'exit memo' — what the org needs to know before you leave.",
-    ],
-  },
-  4: {
-    focus: "Execute the glide slope. Nothing new, everything handed off.",
-    actions: [
-      "Documentation sprint: every system, every contact, every context — written down.",
-      "No new long-term commitments. Zero. Full stop.",
-      "Plan a proper farewell — not a ghost exit.",
-      "Begin living the retirement daily schedule 6 months before you retire.",
-      "Schedule your last day and count backward from it.",
-    ],
-  },
-};
-
-const PHASE_PERMISSION: Record<number, string> = {
-  1: "You are permitted to stop attending meetings where your presence is optional.",
-  2: "You are permitted to let imperfect decisions stand without intervening.",
-  3: "You are permitted to take a full week off without checking in.",
-  4: "You are permitted to say no to anything that doesn't directly serve the handoff.",
-};
+import { useMacroSeasons } from "@/hooks/useMacroSeasons";
 
 export default function MacroSeasonsTimeline() {
-  const { retirementDate } = useRetirementDate();
-  const current          = getCurrentPhase(retirementDate);
-  const monthsIn         = getMonthsInCurrentPhase(retirementDate);
-  const monthsUntilNext  = getMonthsUntilNextPhase(retirementDate);
-  const [expanded, setExpanded] = useState<number>(current.id);
+  const { seasons, currentIndex, source } = useMacroSeasons();
+  const current = seasons[currentIndex];
+  const [expanded, setExpanded] = useState<number>(current?.id ?? 0);
 
-  const totalPhaseMonths = 12;
-  const phaseProgress    = Math.min(100, Math.round((monthsIn / totalPhaseMonths) * 100));
+  // Keep the expanded card in sync when the timeline changes shape.
+  useEffect(() => { setExpanded(current?.id ?? 0); }, [current?.id]);
+
+  if (!seasons.length || !current) return null;
+
+  // ── Time within the current season (month granularity) ────────────────────
+  const now       = new Date();
+  const nowYear   = now.getFullYear();
+  const nowMonth  = now.getMonth();
+  const seasonMonths = Math.max(1, (current.endYear - current.startYear) * 12);
+  const monthsIn  = Math.max(0, (nowYear - current.startYear) * 12 + nowMonth);
+  const next      = seasons[currentIndex + 1];
+  const monthsUntilNext = next
+    ? Math.max(0, (next.startYear - nowYear) * 12 - nowMonth)
+    : 0;
+  const phaseProgress = current.type === "retired"
+    ? 100
+    : Math.min(100, Math.round((monthsIn / seasonMonths) * 100));
+
+  const lastYear = seasons[seasons.length - 1].startYear;
 
   return (
     <div>
       {/* ── Header ── */}
-      <div className="mb-10">
-        <h2 style={{ color: C.ink }} className="text-2xl font-light tracking-tight mb-2">
-          Macro-Seasons
-        </h2>
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <h2 style={{ color: C.ink }} className="text-2xl font-light tracking-tight">
+            Macro-Seasons
+          </h2>
+          {source === "gemini" && (
+            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                  style={{ background: C.tealWash, color: C.tealDark }}>
+              <Sparkles size={10} /> AI-mapped
+            </span>
+          )}
+        </div>
         <p style={{ color: C.inkSoft }} className="text-sm">
-          Four phases, four years. A systematic reduction in corporate intensity — each season
-          expanding your freedom until the exit is effortless.
+          {seasons.length} seasons from {seasons[0].startYear} to {lastYear} — your full glide path
+          from peak intensity to freedom, mapped to your retirement model.
         </p>
       </div>
 
       {/* ── Phase Roadmap Bar ── */}
       <div className="mb-10 p-6 rounded-2xl border" style={{ background: C.bgCard, borderColor: C.borderSoft }}>
         <p style={{ color: C.inkFaint }} className="text-[10px] uppercase tracking-widest mb-4">
-          The Taper Roadmap
+          The Roadmap
         </p>
 
         {/* Segmented bar */}
         <div className="flex rounded-xl overflow-hidden h-8 mb-3" style={{ gap: 2 }}>
-          {HORIZON_CONFIG.phases.map((phase, i) => {
-            const isActive = phase.id === current.id;
-            const isPast   = phase.id < current.id;
+          {seasons.map((s, i) => {
+            const isActive = i === currentIndex;
+            const isPast   = i < currentIndex;
             return (
               <div
-                key={phase.id}
+                key={s.id}
                 className="flex-1 relative flex items-center justify-center cursor-pointer transition-all duration-200"
                 style={{
-                  backgroundColor: isPast ? `${C.phase[i]}55` : isActive ? C.phase[i] : `${C.phase[i]}33`,
-                  borderBottom: isActive ? `3px solid ${C.phase[i]}` : "none",
+                  backgroundColor: isPast ? `${s.color}55` : isActive ? s.color : `${s.color}33`,
+                  borderBottom: isActive ? `3px solid ${s.color}` : "none",
                 }}
-                onClick={() => setExpanded(phase.id)}
+                onClick={() => setExpanded(s.id)}
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wider"
+                <span className="text-[9px] font-semibold uppercase tracking-wider truncate px-1"
                       style={{ color: isPast ? C.inkFaint : isActive ? "white" : C.inkFaint }}>
-                  {phase.label}
+                  {s.label}
                 </span>
                 {isActive && (
                   <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45"
-                       style={{ background: C.phase[i] }} />
+                       style={{ background: s.color }} />
                 )}
               </div>
             );
@@ -119,58 +87,71 @@ export default function MacroSeasonsTimeline() {
 
         {/* Phase labels row */}
         <div className="flex" style={{ gap: 2 }}>
-          {HORIZON_CONFIG.phases.map((phase, i) => (
-            <div key={phase.id} className="flex-1 text-center">
-              <p className="text-[10px]" style={{ color: phase.id === current.id ? C.phase[i] : C.inkFaint }}>
-                {phase.name}
+          {seasons.map((s, i) => (
+            <div key={s.id} className="flex-1 text-center min-w-0">
+              <p className="text-[9px] truncate px-0.5" style={{ color: i === currentIndex ? s.color : C.inkFaint }}>
+                {s.name}
               </p>
             </div>
           ))}
         </div>
 
-        {/* Taper curve — SVG intensity visualization */}
+        {/* Taper curve — SVG line + HTML dot overlay (dots stay perfectly round) */}
         <div className="mt-6">
           <p style={{ color: C.inkFaint }} className="text-[10px] uppercase tracking-widest mb-3">
             Intensity Taper
           </p>
           <div className="relative" style={{ height: 64 }}>
-            <svg width="100%" height="64" preserveAspectRatio="none" viewBox="0 0 400 64">
-              {/* Shaded area under the curve */}
+            <svg width="100%" height="64" preserveAspectRatio="none" viewBox="0 0 400 64" style={{ display: "block" }}>
               <defs>
                 <linearGradient id="taperGrad" x1="0" y1="0" x2="1" y2="0">
-                  {HORIZON_CONFIG.phases.map((p, i) => (
-                    <stop key={i} offset={`${i * 25 + 12.5}%`} stopColor={C.phase[i]} stopOpacity="0.25" />
+                  {seasons.map((s, i) => (
+                    <stop key={i} offset={`${seasons.length > 1 ? (i / (seasons.length - 1)) * 100 : 50}%`}
+                          stopColor={s.color} stopOpacity="0.22" />
                   ))}
                 </linearGradient>
               </defs>
-              {/* Area fill */}
-              <path
-                d={`M 0 ${64 - (85 / 100) * 64} L 100 ${64 - (85 / 100) * 64} L 200 ${64 - (65 / 100) * 64} L 300 ${64 - (40 / 100) * 64} L 400 ${64 - (20 / 100) * 64} L 400 64 L 0 64 Z`}
-                fill="url(#taperGrad)"
-              />
-              {/* Line */}
-              <polyline
-                points={`0,${64 - (85 / 100) * 64} 100,${64 - (85 / 100) * 64} 200,${64 - (65 / 100) * 64} 300,${64 - (40 / 100) * 64} 400,${64 - (20 / 100) * 64}`}
-                fill="none"
-                stroke={C.teal}
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              {/* Phase dots */}
-              {[85, 65, 40, 20].map((intensity, i) => (
-                <circle
-                  key={i}
-                  cx={i === 0 ? 0 : i * 100}
-                  cy={64 - (intensity / 100) * 64}
-                  r="4"
-                  fill={i + 1 === current.id ? C.teal : C.border}
-                  stroke="white"
-                  strokeWidth="2"
-                />
-              ))}
+              {(() => {
+                const n = seasons.length;
+                const xAt = (i: number) => (n > 1 ? (i / (n - 1)) * 400 : 200);
+                const yAt = (v: number) => 64 - (v / 100) * 60 - 2;
+                const pts = seasons.map((s, i) => `${xAt(i)},${yAt(s.intensity)}`).join(" ");
+                const area = `M ${xAt(0)} ${yAt(seasons[0].intensity)} ` +
+                  seasons.map((s, i) => `L ${xAt(i)} ${yAt(s.intensity)}`).join(" ") +
+                  ` L ${xAt(n - 1)} 64 L ${xAt(0)} 64 Z`;
+                return (
+                  <>
+                    <path d={area} fill="url(#taperGrad)" />
+                    <polyline points={pts} fill="none" stroke={C.teal} strokeWidth="2"
+                      strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                  </>
+                );
+              })()}
             </svg>
+
+            {/* Dots as HTML — fixed pixel size, so always circular */}
+            {seasons.map((s, i) => {
+              const n = seasons.length;
+              const leftPct = n > 1 ? (i / (n - 1)) * 100 : 50;
+              const topPx   = 64 - (s.intensity / 100) * 60 - 2;
+              const isActive = i === currentIndex;
+              return (
+                <div key={s.id}
+                  title={`${s.name} · ${s.intensity}%`}
+                  style={{
+                    position: "absolute", left: `${leftPct}%`, top: topPx,
+                    width: 9, height: 9, borderRadius: "50%",
+                    background: isActive ? C.teal : "white",
+                    border: `2px solid ${isActive ? C.teal : s.color}`,
+                    transform: "translate(-50%, -50%)",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+                  }}
+                />
+              );
+            })}
+
             {/* Y-axis labels */}
-            <div className="absolute top-0 left-0 flex flex-col justify-between h-full" style={{ gap: 0, pointerEvents: "none" }}>
+            <div className="absolute top-0 left-0 flex flex-col justify-between h-full" style={{ pointerEvents: "none" }}>
               <span className="text-[9px]" style={{ color: C.inkFaint }}>100%</span>
               <span className="text-[9px]" style={{ color: C.inkFaint }}>50%</span>
               <span className="text-[9px]" style={{ color: C.inkFaint }}>0%</span>
@@ -179,22 +160,21 @@ export default function MacroSeasonsTimeline() {
         </div>
       </div>
 
-      {/* ── Current Phase Callout ── */}
+      {/* ── Current Season Callout ── */}
       <div className="mb-8 p-6 rounded-2xl" style={{ background: C.tealWash, border: `1px solid ${C.tealLight}` }}>
         <div className="flex items-start justify-between gap-6 flex-wrap">
-          <div>
+          <div className="min-w-0">
             <p style={{ color: C.tealDark }} className="text-[10px] uppercase tracking-widest mb-1">
               You are here — {current.label}
             </p>
             <h3 style={{ color: C.ink }} className="text-xl font-semibold mb-1">{current.name}</h3>
             <p style={{ color: C.inkMid }} className="text-sm italic mb-4">{current.tagline}</p>
 
-            {/* Throttle permission */}
             <div className="flex items-start gap-2 p-3 rounded-xl" style={{ background: "white", border: `1px solid ${C.tealLight}` }}>
-              <div className="w-1 h-full min-h-full rounded-full shrink-0" style={{ background: C.teal, alignSelf: "stretch", minHeight: 20 }} />
+              <div className="w-1 rounded-full shrink-0" style={{ background: C.teal, alignSelf: "stretch", minHeight: 20 }} />
               <p style={{ color: C.inkMid }} className="text-sm leading-relaxed">
                 <span style={{ color: C.teal }} className="font-semibold">Permission: </span>
-                {PHASE_PERMISSION[current.id]}
+                {current.permission}
               </p>
             </div>
           </div>
@@ -209,9 +189,9 @@ export default function MacroSeasonsTimeline() {
               <p style={{ color: C.inkFaint }} className="text-[10px] mt-1">{phaseProgress}% through</p>
             </div>
 
-            {current.id < 4 && (
+            {next && (
               <div className="text-center">
-                <p style={{ color: C.tealDark }} className="text-[10px] uppercase tracking-widest mb-1">Next Phase In</p>
+                <p style={{ color: C.tealDark }} className="text-[10px] uppercase tracking-widest mb-1">Next Season In</p>
                 <p style={{ color: C.ink }} className="text-3xl font-extralight tabular-nums">{monthsUntilNext}</p>
                 <p style={{ color: C.inkFaint }} className="text-[10px] mt-1">months</p>
               </div>
@@ -219,7 +199,7 @@ export default function MacroSeasonsTimeline() {
 
             <div className="text-center">
               <p style={{ color: C.tealDark }} className="text-[10px] uppercase tracking-widest mb-1">Throttle</p>
-              <p style={{ color: C.phase[current.id - 1] }} className="text-3xl font-extralight tabular-nums">
+              <p style={{ color: current.color }} className="text-3xl font-extralight tabular-nums">
                 {current.intensity}%
               </p>
               <p style={{ color: C.inkFaint }} className="text-[10px] mt-1">of full output</p>
@@ -228,40 +208,36 @@ export default function MacroSeasonsTimeline() {
         </div>
       </div>
 
-      {/* ── Phase Cards — expandable ── */}
+      {/* ── Season Cards — expandable ── */}
       <div className="space-y-3">
-        {HORIZON_CONFIG.phases.map((phase, i) => {
-          const isActive   = phase.id === current.id;
-          const isPast     = phase.id < current.id;
-          const isExpanded = expanded === phase.id;
-          const color      = C.phase[i];
-          const data       = PHASE_ACTIONS[phase.id];
+        {seasons.map((s, i) => {
+          const isActive   = i === currentIndex;
+          const isPast     = i < currentIndex;
+          const isExpanded = expanded === s.id;
+          const color      = s.color;
 
           return (
             <div
-              key={phase.id}
+              key={s.id}
               className="rounded-2xl border transition-all duration-300 overflow-hidden"
               style={{
                 background:  isExpanded ? C.bgCard : "transparent",
-                borderColor: isExpanded ? C.borderSoft : C.borderSoft,
+                borderColor: C.borderSoft,
                 opacity:     isPast && !isExpanded ? 0.45 : 1,
                 boxShadow:   isExpanded && isActive ? "0 2px 20px 0 rgba(58,158,135,0.1)" : "none",
               }}
             >
-              {/* Header row — always visible, click to expand */}
               <button
                 className="w-full text-left p-5 flex items-center justify-between gap-4 cursor-pointer"
-                onClick={() => setExpanded(isExpanded ? 0 : phase.id)}
+                onClick={() => setExpanded(isExpanded ? -1 : s.id)}
               >
                 <div className="flex items-center gap-4 min-w-0">
-                  {/* Phase color swatch */}
                   <div className="w-2 h-10 rounded-full shrink-0" style={{ backgroundColor: color }} />
-
                   <div className="min-w-0">
                     <div className="flex items-center gap-2.5 mb-0.5 flex-wrap">
                       <span className="text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded-full"
                             style={{ background: `${color}22`, color }}>
-                        {phase.label}
+                        {s.label}
                       </span>
                       {isActive && (
                         <span style={{ color: C.teal }} className="text-[10px] uppercase tracking-widest font-medium">
@@ -269,19 +245,18 @@ export default function MacroSeasonsTimeline() {
                         </span>
                       )}
                     </div>
-                    <h3 style={{ color: C.ink }} className="text-base font-medium">{phase.name}</h3>
+                    <h3 style={{ color: C.ink }} className="text-base font-medium">{s.name}</h3>
                     {!isExpanded && (
-                      <p style={{ color: C.inkSoft }} className="text-xs italic truncate">{phase.tagline}</p>
+                      <p style={{ color: C.inkSoft }} className="text-xs italic truncate">{s.tagline}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-6 shrink-0">
-                  {/* Intensity mini-bar */}
                   <div className="text-right hidden sm:block">
-                    <p style={{ color }} className="text-lg font-extralight tabular-nums">{phase.intensity}%</p>
+                    <p style={{ color }} className="text-lg font-extralight tabular-nums">{s.intensity}%</p>
                     <div className="w-16 h-0.5 rounded-full mt-1 ml-auto" style={{ background: C.border }}>
-                      <div className="h-full rounded-full" style={{ width: `${phase.intensity}%`, backgroundColor: color }} />
+                      <div className="h-full rounded-full" style={{ width: `${s.intensity}%`, backgroundColor: color }} />
                     </div>
                   </div>
                   <div style={{ color: C.inkFaint }}>
@@ -290,24 +265,21 @@ export default function MacroSeasonsTimeline() {
                 </div>
               </button>
 
-              {/* Expanded body */}
               {isExpanded && (
                 <div className="px-5 pb-6 border-t" style={{ borderColor: C.borderSoft }}>
-                  <p style={{ color: C.inkSoft }} className="text-sm italic mt-4 mb-5">{phase.tagline}</p>
+                  <p style={{ color: C.inkSoft }} className="text-sm italic mt-4 mb-5">{s.tagline}</p>
 
-                  {/* Weekly focus */}
                   <div className="mb-5 p-4 rounded-xl flex items-start gap-3"
                        style={{ background: `${color}12`, border: `1px solid ${color}33` }}>
                     <div className="w-1 rounded-full shrink-0 mt-0.5" style={{ background: color, alignSelf: "stretch", minHeight: 16 }} />
                     <div>
-                      <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color }}>This Phase's Focus</p>
-                      <p style={{ color: C.ink }} className="text-sm font-medium leading-relaxed">{data.focus}</p>
+                      <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color }}>This Season's Focus</p>
+                      <p style={{ color: C.ink }} className="text-sm font-medium leading-relaxed">{s.focus}</p>
                     </div>
                   </div>
 
-                  {/* Action list */}
                   <ul className="space-y-3">
-                    {data.actions.map((action, j) => (
+                    {s.actions.map((action, j) => (
                       <li key={j} className="flex items-start gap-3 text-sm" style={{ color: C.inkMid }}>
                         <span className="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[10px] font-semibold mt-0.5"
                               style={{ borderColor: color, color }}>
