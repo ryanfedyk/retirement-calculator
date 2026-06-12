@@ -134,6 +134,9 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
+  // Year currently hovered on the chart — reveals subtle (secondary) milestones
+  const [hoverYear, setHoverYear] = useState<string | null>(null);
+
   // ── Derive live GOOG price and overall price status ───────────────────────
   const googInfo     = livePrices["GOOG"] ?? livePrices["GOOGL"];
   const liveGoogPrice = googInfo?.price ?? 0;
@@ -200,30 +203,66 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   const mortgageDateStr = findDate(p => p.date === "Jun 2051");
   const enDateStr      = config.spending.empty_nest_year ? findDate(p => p.date.includes(String(config.spending.empty_nest_year))) : null;
 
-  // Only the 5-6 most meaningful milestones — staggered so pills never overlap.
-  // yOffset: positive = push DOWN from the chart top edge (0 = very top, 24 = one row lower…)
-  const renderRefLines = () => {
-    const lines: Array<{ x: string; stroke: string; label: string; yOffset: number }> = [];
-
-    // Collect in chronological order so stagger works left-to-right
-    if (sabbDateStr)     lines.push({ x: sabbDateStr,     stroke: C.warm,     label: "Sabbatical",    yOffset: 0  });
-    if (jumpDateStr)     lines.push({ x: jumpDateStr,     stroke: "#4aab92",  label: "Jump",          yOffset: 22 });
-    if (bridgeDateStr)   lines.push({ x: bridgeDateStr,   stroke: C.teal,     label: "Bridge",        yOffset: 44 });
-    if (retireDateStr)   lines.push({ x: retireDateStr,   stroke: "#2a7a68",  label: "Retire",        yOffset: 0  });
-    if (indepPoint)      lines.push({ x: indepPoint.date, stroke: "#80c4ae",  label: "FI",            yOffset: 22 });
-    if (ssDateStr)       lines.push({ x: ssDateStr,       stroke: C.warm,     label: "SS",            yOffset: 44 });
-    if (mortgageDateStr) lines.push({ x: mortgageDateStr, stroke: "#9bbdb4",  label: "Paid Off",      yOffset: 0  });
-    if (enDateStr)       lines.push({ x: enDateStr,       stroke: C.warm,     label: "Empty Nest",    yOffset: 22 });
-
-    return (
-      <>
-        {lines.map(({ x, stroke, label, yOffset }) => (
-          <ReferenceLine key={label} x={x} stroke={stroke} strokeDasharray="3 3" strokeWidth={1.2}
-            label={<RefLabel value={label} fill={stroke} yOffset={yOffset} />} />
-        ))}
-      </>
-    );
+  // Compact label for a life event ("Oona — College Year 1" → "🎓 Oona Yr1")
+  const lifeEventLabel = (name: string) => {
+    const lower = name.toLowerCase();
+    if (lower.includes("college")) {
+      const child = name.split("—")[0].trim().split(" ")[0];
+      const yr    = (name.match(/year\s*(\d)/i) || [])[1];
+      return `🎓 ${child}${yr ? ` Yr${yr}` : ""}`;
+    }
+    if (lower.includes("renov")) return "🏠 Reno";
+    if (lower.includes("wedding")) return "💍";
+    return name.length > 12 ? name.slice(0, 12) + "…" : name;
   };
+
+  const yearOf = (dateStr: string) => dateStr.split(" ")[1] ?? dateStr;
+
+  // Milestone model: `primary` ones are always visible; `secondary` ones render
+  // subtly (faint line, no pill) until the user hovers over that year on the chart.
+  type Milestone = { x: string; stroke: string; label: string; primary: boolean };
+
+  const milestones: Milestone[] = (() => {
+    const m: Milestone[] = [];
+    // Primary — the headline financial milestones
+    if (retireDateStr)   m.push({ x: retireDateStr,   stroke: "#2a7a68", label: "Retire",     primary: true  });
+    if (indepPoint)      m.push({ x: indepPoint.date, stroke: "#80c4ae", label: "FI",         primary: true  });
+    if (mortgageDateStr) m.push({ x: mortgageDateStr, stroke: "#9bbdb4", label: "Paid Off",   primary: true  });
+    if (enDateStr)       m.push({ x: enDateStr,       stroke: C.warm,    label: "Empty Nest", primary: true  });
+    // Secondary — career phases, benefits, and life events (subtle until hovered)
+    if (sabbDateStr)     m.push({ x: sabbDateStr,     stroke: C.warm,    label: "Sabbatical", primary: false });
+    if (jumpDateStr)     m.push({ x: jumpDateStr,     stroke: "#4aab92", label: "Jump",       primary: false });
+    if (bridgeDateStr)   m.push({ x: bridgeDateStr,   stroke: C.teal,    label: "Bridge",     primary: false });
+    if (ssDateStr)       m.push({ x: ssDateStr,       stroke: C.warm,    label: "Soc. Sec.",  primary: false });
+    if (medDateStr)      m.push({ x: medDateStr,      stroke: "#9bbdb4", label: "Medicare",   primary: false });
+    // Life events from config (college years, renovation, …)
+    for (const ev of config.life_events ?? []) {
+      const x = findDate(p => p.date.includes(String(ev.year)));
+      if (x) m.push({ x, stroke: "#b9895e", label: lifeEventLabel(ev.name), primary: false });
+    }
+    return m;
+  })();
+
+  // yOffset staggering so simultaneously-visible pills don't overlap.
+  const renderRefLines = () => (
+    <>
+      {milestones.map(({ x, stroke, label, primary }, i) => {
+        const revealed = primary || yearOf(x) === hoverYear;
+        const yOffset  = (i % 3) * 22;
+        return (
+          <ReferenceLine
+            key={`${label}-${x}`}
+            x={x}
+            stroke={stroke}
+            strokeDasharray="3 3"
+            strokeWidth={revealed ? 1.3 : 1}
+            strokeOpacity={revealed ? 0.75 : 0.18}
+            label={revealed ? <RefLabel value={label} fill={stroke} yOffset={yOffset} /> : undefined}
+          />
+        );
+      })}
+    </>
+  );
 
   return (
     <main style={{ flex: 1, background: C.bg, padding: "20px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -326,7 +365,9 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
             <LifeCalendar data={trajectoryData} config={config} />
           ) : (
             <ResponsiveContainer width="100%" height={446}>
-              <AreaChart data={chartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}
+                onMouseMove={(s: any) => { if (s?.activeLabel) setHoverYear(yearOf(String(s.activeLabel))); }}
+                onMouseLeave={() => setHoverYear(null)}>
                 <defs>
                   <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor={C.teal} stopOpacity={0.2} />

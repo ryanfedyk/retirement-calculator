@@ -9,7 +9,7 @@ import type { AdventureBlueprint } from "@/types/horizon";
 
 /* ── fixed geometry ──────────────────────────────────────────────────────── */
 const W = 1000, H = 210, FLIGHT_Y = 62;
-const MOSAIC_H   = 460;
+const MOSAIC_H   = 520;
 const FLIGHT_PCT = (FLIGHT_Y / H) * 100;
 const MAP_START  = new Date(2026, 2, 1); // Mar 2026 — fixed left edge
 
@@ -375,9 +375,9 @@ export default function FlightMap({ pinnedAdventures = [] }: Props) {
         {/* Mosaic overlay */}
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10,
-          background: `${C.bg}f2`, backdropFilter: "blur(3px)", overflowY: "auto",
+          background: `${C.bg}f2`, backdropFilter: "blur(3px)", overflow: "hidden",
           opacity: showMosaic ? 1 : 0, pointerEvents: showMosaic ? "auto" : "none",
-          transition: "opacity 0.3s ease", padding: "20px 32px 28px",
+          transition: "opacity 0.3s ease", padding: "16px 32px 20px",
         }}>
           {showMosaic && <MosaicOfMonths pinnedAdventures={pinnedAdventures} />}
         </div>

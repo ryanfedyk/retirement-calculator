@@ -246,10 +246,10 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex items-start justify-between mb-4">
         <div>
-          <h2 style={{ color: C.ink }} className="text-2xl font-light tracking-tight mb-2">Mosaic of Months</h2>
-          <p style={{ color: C.inkSoft }} className="text-sm leading-relaxed">
+          <h2 style={{ color: C.ink }} className="text-xl font-light tracking-tight mb-1">Mosaic of Months</h2>
+          <p style={{ color: C.inkSoft }} className="text-xs leading-relaxed">
             <span style={{ color: C.ink }} className="font-medium">{futureCells}</span> months ahead.{" "}
             <span style={{ color: C.inkFaint }}>{pastCells} months behind you.</span>{" "}
             Retirement: {retirementDate.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}.
@@ -263,18 +263,18 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
       </div>
 
       {/* Two-column layout */}
-      <div className="flex gap-8 items-start">
+      <div className="flex gap-6 items-start">
 
         {/* ── Grid ── */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" style={{ maxWidth: 480 }}>
 
           {/* Info bar */}
-          <p style={{ color: C.inkFaint }} className="text-xs mb-5">
+          <p style={{ color: C.inkFaint }} className="text-[11px] mb-3">
             {getRemainingWorkingDays()} working days left this month · hover any future cell for a life snapshot
           </p>
 
           {/* Legend */}
-          <div className="flex gap-5 mb-5 flex-wrap items-center">
+          <div className="flex gap-4 mb-3 flex-wrap items-center">
             {[
               { color: `#1a2e25${a(0.38)}`, label: "Past" },
               { color: C.phase[0],           label: "Current" },
@@ -359,7 +359,7 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
             })}
           </div>
 
-          <div className="flex justify-between mt-6 text-[11px]" style={{ color: C.inkFaint }}>
+          <div className="flex justify-between mt-4 text-[10px]" style={{ color: C.inkFaint }}>
             <span>← Each row = 12 months · {Math.ceil(cells.length / 12)} rows total</span>
             <span>
               {retirementDate.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })} →
