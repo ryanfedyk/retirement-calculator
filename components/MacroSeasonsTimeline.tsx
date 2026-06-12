@@ -8,6 +8,7 @@ import {
   getMonthsInCurrentPhase,
   getMonthsUntilNextPhase,
 } from "@/lib/horizonUtils";
+import { useRetirementDate } from "@/hooks/useRetirementDate";
 
 const PHASE_ACTIONS: Record<number, { focus: string; actions: string[] }> = {
   1: {
@@ -60,9 +61,10 @@ const PHASE_PERMISSION: Record<number, string> = {
 };
 
 export default function MacroSeasonsTimeline() {
-  const current          = getCurrentPhase();
-  const monthsIn         = getMonthsInCurrentPhase();
-  const monthsUntilNext  = getMonthsUntilNextPhase();
+  const { retirementDate } = useRetirementDate();
+  const current          = getCurrentPhase(retirementDate);
+  const monthsIn         = getMonthsInCurrentPhase(retirementDate);
+  const monthsUntilNext  = getMonthsUntilNextPhase(retirementDate);
   const [expanded, setExpanded] = useState<number>(current.id);
 
   const totalPhaseMonths = 12;

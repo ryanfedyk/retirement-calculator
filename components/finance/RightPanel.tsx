@@ -230,10 +230,12 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
     if (indepPoint)      m.push({ x: indepPoint.date, stroke: "#80c4ae", label: "FI",         primary: true  });
     if (mortgageDateStr) m.push({ x: mortgageDateStr, stroke: "#9bbdb4", label: "Paid Off",   primary: true  });
     if (enDateStr)       m.push({ x: enDateStr,       stroke: C.warm,    label: "Empty Nest", primary: true  });
-    // Secondary — career phases, benefits, and life events (subtle until hovered)
-    if (sabbDateStr)     m.push({ x: sabbDateStr,     stroke: C.warm,    label: "Sabbatical", primary: false });
-    if (jumpDateStr)     m.push({ x: jumpDateStr,     stroke: "#4aab92", label: "Jump",       primary: false });
-    if (bridgeDateStr)   m.push({ x: bridgeDateStr,   stroke: C.teal,    label: "Bridge",     primary: false });
+    // Career-phase transitions — prominent (always visible), since they're the
+    // core levers of the retirement model.
+    if (sabbDateStr)     m.push({ x: sabbDateStr,     stroke: "#d98a3d", label: "Sabbatical", primary: true  });
+    if (jumpDateStr)     m.push({ x: jumpDateStr,     stroke: "#2a9d7f", label: "Career Jump",primary: true  });
+    if (bridgeDateStr)   m.push({ x: bridgeDateStr,   stroke: "#3a7d9c", label: "Bridge Job", primary: true  });
+    // Secondary — benefits and life events (subtle until hovered)
     if (ssDateStr)       m.push({ x: ssDateStr,       stroke: C.warm,    label: "Soc. Sec.",  primary: false });
     if (medDateStr)      m.push({ x: medDateStr,      stroke: "#9bbdb4", label: "Medicare",   primary: false });
     // Life events from config (college years, renovation, …)

@@ -1,18 +1,21 @@
 import { HORIZON_CONFIG } from "@/config/horizonConfig";
 import type { MonthCell, ChildMilestone, LifeEvent } from "@/types/horizon";
 
-export function getMonthsRemaining(): number {
+// Default retirement date (static fallback). Call sites in the Forecasting tab
+// pass the DYNAMIC date from useRetirementDate() so everything reacts to the
+// retirement model configured on the Financial tab.
+const DEFAULT_RET = HORIZON_CONFIG.user.retirementDate;
+
+export function getMonthsRemaining(ret: Date = DEFAULT_RET): number {
   const now = new Date();
-  const ret = HORIZON_CONFIG.user.retirementDate;
   return (
     (ret.getFullYear() - now.getFullYear()) * 12 +
     (ret.getMonth() - now.getMonth())
   );
 }
 
-export function getCareerProgress(): number {
+export function getCareerProgress(ret: Date = DEFAULT_RET): number {
   const start = HORIZON_CONFIG.user.corporateStartDate;
-  const ret   = HORIZON_CONFIG.user.retirementDate;
   const now   = new Date();
   const elapsed =
     (now.getFullYear() - start.getFullYear()) * 12 +
@@ -30,9 +33,8 @@ export function getPhaseForMonthOffset(offset: number): number {
   return HORIZON_CONFIG.phases[HORIZON_CONFIG.phases.length - 1].id;
 }
 
-export function getCurrentPhase() {
+export function getCurrentPhase(ret: Date = DEFAULT_RET) {
   const now = new Date();
-  const ret = HORIZON_CONFIG.user.retirementDate;
   const remaining =
     (ret.getFullYear() - now.getFullYear()) * 12 +
     (ret.getMonth()    - now.getMonth());
@@ -45,9 +47,8 @@ export function getCurrentPhase() {
 
 /** Builds ALL cells from the phase start date through retirement.
  *  Includes past, current, and future months for full mosaic context. */
-export function buildMosaicCells(): MonthCell[] {
+export function buildMosaicCells(ret: Date = DEFAULT_RET): MonthCell[] {
   const now   = new Date();
-  const ret   = HORIZON_CONFIG.user.retirementDate;
 
   // Start from the beginning of the first phase (Jan of corporateStartDate year or a fixed anchor).
   // For the mosaic view we show the last 12 months + all future — keeps the grid legible.
@@ -85,9 +86,8 @@ export function buildMosaicCells(): MonthCell[] {
 }
 
 /** Returns only the future milestone months for the Milestones Panel. */
-export function getUpcomingMilestones(): (ChildMilestone & { date: Date; monthsAway: number; gridRow: number })[] {
+export function getUpcomingMilestones(ret: Date = DEFAULT_RET): (ChildMilestone & { date: Date; monthsAway: number; gridRow: number })[] {
   const now    = new Date();
-  const ret    = HORIZON_CONFIG.user.retirementDate;
   const result: (ChildMilestone & { date: Date; monthsAway: number; gridRow: number })[] = [];
 
   let year  = now.getFullYear();
@@ -136,34 +136,28 @@ function getBirthdayNote(name: string, age: number): string {
 }
 
 /** Returns the calendar date when a phase begins, relative to today. */
-export function getPhaseStartDate(phaseId: number): Date {
+export function getPhaseStartDate(phaseId: number, ret: Date = DEFAULT_RET): Date {
   const now   = new Date();
   const phase = HORIZON_CONFIG.phases.find(p => p.id === phaseId)!;
   const d     = new Date(now);
-  d.setMonth(d.getMonth() + phase.startOffset - (48 - getMonthsRemaining()));
+  d.setMonth(d.getMonth() + phase.startOffset - (48 - getMonthsRemaining(ret)));
   d.setDate(1);
   return d;
 }
 
 /** Months elapsed within the current phase (0-indexed). */
-export function getMonthsInCurrentPhase(): number {
-  const now     = new Date();
-  const ret     = HORIZON_CONFIG.user.retirementDate;
-  const remaining = (ret.getFullYear() - now.getFullYear()) * 12 + (ret.getMonth() - now.getMonth());
-  const elapsed   = 48 - remaining;
-  const phase     = getCurrentPhase();
+export function getMonthsInCurrentPhase(ret: Date = DEFAULT_RET): number {
+  const elapsed   = 48 - getMonthsRemaining(ret);
+  const phase     = getCurrentPhase(ret);
   return Math.max(0, elapsed - phase.startOffset);
 }
 
 /** Months until the next phase begins (or 0 if in last phase). */
-export function getMonthsUntilNextPhase(): number {
-  const current = getCurrentPhase();
+export function getMonthsUntilNextPhase(ret: Date = DEFAULT_RET): number {
+  const current = getCurrentPhase(ret);
   if (current.id === 4) return 0;
   const next    = HORIZON_CONFIG.phases.find(p => p.id === current.id + 1)!;
-  const now     = new Date();
-  const ret     = HORIZON_CONFIG.user.retirementDate;
-  const remaining = (ret.getFullYear() - now.getFullYear()) * 12 + (ret.getMonth() - now.getMonth());
-  const elapsed   = 48 - remaining;
+  const elapsed = 48 - getMonthsRemaining(ret);
   return Math.max(0, next.startOffset - elapsed);
 }
 
@@ -208,9 +202,8 @@ const LIFE_MILESTONES: Array<{
   },
 ];
 
-export function getLifeEvents(): LifeEvent[] {
+export function getLifeEvents(ret: Date = DEFAULT_RET): LifeEvent[] {
   const now = new Date();
-  const ret = HORIZON_CONFIG.user.retirementDate;
   const events: LifeEvent[] = [];
 
   for (const child of HORIZON_CONFIG.children) {

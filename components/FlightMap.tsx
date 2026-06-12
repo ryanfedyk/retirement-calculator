@@ -101,7 +101,7 @@ function buildWaypoints(mapEnd: Date, xOf: (d: Date) => number): Waypoint[] {
   }
 
   // Kids' life events
-  for (const ev of getLifeEvents()) {
+  for (const ev of getLifeEvents(mapEnd)) {
     const d = new Date(ev.year, ev.month, 1);
     if (d > now && d <= mapEnd)
       add({ x: xOf(d), label: `${ev.icon} ${ev.childName}`, type: "life", color: C.warm, important: true });

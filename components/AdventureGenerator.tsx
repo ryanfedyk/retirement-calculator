@@ -5,6 +5,7 @@ import { C } from "@/config/colors";
 import { HORIZON_CONFIG } from "@/config/horizonConfig";
 import { ADVENTURE_SEEDS } from "@/data/adventureSeeds";
 import { getCurrentPhase } from "@/lib/horizonUtils";
+import { useRetirementDate } from "@/hooks/useRetirementDate";
 import type { AdventureBlueprint, AdventureCategory, CommitmentLevel, WhenToStart } from "@/types/horizon";
 
 const CATEGORIES: AdventureCategory[] = ["Immersive Travel", "Creative Mastery", "Endurance/Active", "Slow Living"];
@@ -54,7 +55,8 @@ interface Props {
 }
 
 export default function AdventureGenerator({ saved, setSaved }: Props) {
-  const currentPhase = getCurrentPhase();
+  const { retirementDate } = useRetirementDate();
+  const currentPhase = getCurrentPhase(retirementDate);
   const [cat,    setCat]    = useState<AdventureCategory | "All">("All");
   const [comm,   setComm]   = useState<CommitmentLevel | "All">("All");
   const [when,   setWhen]   = useState<WhenToStart | "All">("All");

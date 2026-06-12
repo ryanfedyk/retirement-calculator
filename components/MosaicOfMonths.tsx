@@ -209,8 +209,8 @@ interface Props { pinnedAdventures: AdventureBlueprint[]; }
 
 export default function MosaicOfMonths({ pinnedAdventures }: Props) {
   const { retirementDate } = useRetirementDate();
-  const cells      = buildMosaicCells();
-  const lifeEvents = getLifeEvents();
+  const cells      = buildMosaicCells(retirementDate);
+  const lifeEvents = getLifeEvents(retirementDate);
 
   const [hovered,   setHovered]   = useState<MonthCell | null>(null);
   const [showPanel, setShowPanel] = useState(true);

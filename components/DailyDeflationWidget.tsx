@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Play, Pause, RotateCcw, Check } from "lucide-react";
 import { C } from "@/config/colors";
 import { getDailyMantra, getCurrentPhase } from "@/lib/horizonUtils";
+import { useRetirementDate } from "@/hooks/useRetirementDate";
 import { HORIZON_CONFIG } from "@/config/horizonConfig";
 
 const DURATION = 15 * 60;
@@ -30,8 +31,9 @@ export default function DailyDeflationWidget() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const ref = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { retirementDate } = useRetirementDate();
   const mantra   = getDailyMantra();
-  const phase    = getCurrentPhase();
+  const phase    = getCurrentPhase(retirementDate);
   const progress = ((DURATION - left) / DURATION) * 100;
   const offset   = CIRC - (CIRC * progress) / 100;
 
