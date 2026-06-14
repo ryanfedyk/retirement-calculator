@@ -147,7 +147,7 @@ export const DEFAULT_SIM_CONFIG: SimulationConfiguration = {
   },
   medicare: {
     start_age:      65,
-    monthly_premium: 174.70,
+    monthly_premium: 250,   // per-person all-in (Part B + Part D + modest Medigap); ×2 adults ≈ $500/mo
   },
   tax_optimization: {
     enable_aca_optimization:       true,

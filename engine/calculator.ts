@@ -145,6 +145,10 @@ export interface TrajectoryPoint {
 }
 
 import { calculateTax } from './tax_engine';
+import { PERSONAL } from '@/config/sharedConfig';
+
+// Age at which a child is assumed to leave the family health plan (post-college).
+const CHILD_OFF_PLAN_AGE = 22;
 
 // ── ACA Federal Poverty Line (2025) ──────────────────────────────────────────
 // 48 contiguous states + DC
@@ -489,43 +493,38 @@ export const runSimulation = (
     const bridgeCovered = (phase === 'BRIDGE') && !!ip.bridge_has_health_insurance;
     const hasEmployerCoverage = phase === 'GOOGLE' || phase === 'JUMP' || partnerIsWorking || bridgeCovered;
 
+    const adults = config.tax_assumptions.filing_status === 'married_joint' ? 2 : 1;
+
     if (!hasEmployerCoverage) {
       if (config.medicare && currentAge >= config.medicare.start_age) {
-        // Medicare is NOT free: Part B base (the config value) + Part D drug
-        // coverage + a Medigap supplement, and a married couple pays for TWO
-        // people. (By Medicare age the children are independent adults.)
-        const PART_D   = 40;   // ~2025 average Part D premium, per person
-        const MEDIGAP  = 165;  // ~Plan G supplement, per person
-        const perPerson = config.medicare.monthly_premium + PART_D + MEDIGAP;
-        const adults    = config.tax_assumptions.filing_status === 'married_joint' ? 2 : 1;
-        currentHealthcareCost = perPerson * adults * inflationMultiplier;
+        // Medicare: per-person all-in (Part B + Part D + modest Medigap) × adults.
+        // Far cheaper than private pre-65 coverage — healthcare drops at 65.
+        currentHealthcareCost = config.medicare.monthly_premium * adults * inflationMultiplier;
       } else {
-        currentHealthcareCost = config.spending.healthcare_premium * inflationMultiplier;
-      }
+        // Pre-65 private/ACA coverage scales with the number of people actually
+        // ON the plan. Children age off at ~22 (post-college), so the premium
+        // falls as each kid leaves — and is lowest once it's just the adults.
+        const baseFamilySize = Math.max(1, opt?.aca_family_size ?? 4);
+        const perCapita      = config.spending.healthcare_premium / baseFamilySize;
+        const coveredKids    = PERSONAL.children.filter(
+          c => currentYear - c.birthYear < CHILD_OFF_PLAN_AGE
+        ).length;
+        const coveredPeople  = adults + coveredKids;
+        currentHealthcareCost = perCapita * coveredPeople * inflationMultiplier;
 
-      // OPT #4: ACA subsidies during low-income phases (sabbatical + pre-Medicare retirement)
-      const isLowIncomePhase = phase === 'SABBATICAL'
-        || (phase === 'RETIRED' && currentAge < (config.medicare?.start_age ?? 65));
-
-      if (isLowIncomePhase && (opt?.enable_aca_optimization ?? true)) {
-        const familySize   = opt?.aca_family_size ?? 4;
-        const fpl          = getFPL(familySize) * inflationMultiplier; // Index FPL with inflation
-        // MAGI must include the taxable income generated to FUND retirement
-        // spending — not just rental. Withdrawals to cover the spending gap
-        // realize capital gains / ordinary income (~60% taxable; the rest is
-        // return-of-basis, Roth, or cash). Ignoring this hugely overstates the
-        // ACA subsidy and understates healthcare cost.
-        const annualSpendProxy   = baseMonthlySpend * 12 * inflationMultiplier;
-        const withdrawalNeed     = Math.max(0, annualSpendProxy - annualRentalGross - socialSecurityIncome * 12);
-        const taxableWithdrawals = withdrawalNeed * 0.6;
-        const magiForACA   = annualRentalGross + socialSecurityIncome * 12 * 0.85 + taxableWithdrawals;
-        const fplRatio     = magiForACA / fpl;
-        const benchmarkMo  = (opt?.aca_benchmark_monthly_premium ?? 2_500) * inflationMultiplier;
-        const maxContribPct = acaMaxContributionPct(fplRatio);
-        const maxMonthly   = (magiForACA * maxContribPct) / 12;
-        const subsidy      = Math.max(0, benchmarkMo - maxMonthly);
-        // Subsidy reduces effective out-of-pocket healthcare cost
-        currentHealthcareCost = Math.max(maxMonthly, currentHealthcareCost - subsidy);
+        // ACA premium subsidy applies only during a true low-income window —
+        // the sabbatical, when the family lives on rental income alone. In
+        // normal early retirement, six-figure withdrawals push MAGI above the
+        // meaningful-subsidy range, so they pay the full (kid-scaled) premium.
+        if (phase === 'SABBATICAL' && (opt?.enable_aca_optimization ?? true)) {
+          const fpl           = getFPL(baseFamilySize) * inflationMultiplier;
+          const magiForACA    = annualRentalGross + socialSecurityIncome * 12 * 0.85;
+          const fplRatio      = magiForACA / fpl;
+          const maxContribPct = acaMaxContributionPct(fplRatio);
+          const maxMonthly    = (magiForACA * maxContribPct) / 12;
+          // You pay the lesser of the full premium or your income-based cap.
+          currentHealthcareCost = Math.min(currentHealthcareCost, maxMonthly);
+        }
       }
 
       expense += currentHealthcareCost;
