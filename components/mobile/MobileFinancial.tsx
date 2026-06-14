@@ -1,10 +1,11 @@
 "use client";
 import { useState, useMemo } from "react";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from "recharts";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { RefreshCw, ChevronRight } from "lucide-react";
 import { C } from "@/config/colors";
 import { useFinancialStore } from "@/store/useFinancialStore";
 import { runSimulation } from "@/engine/calculator";
+import { getLifeEvents } from "@/lib/horizonUtils";
 import type { LivePrices } from "@/components/finance/FinancialDashboard";
 
 const fmtM = (v: number) => {
@@ -78,24 +79,34 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
   ].filter(Boolean) as string[];
 
   // Snap a full-resolution trajectory date to the nearest down-sampled chart
-  // point so Recharts (which needs x to match a data category) renders the line.
+  // point so it lines up with the data the tooltip reports while scrubbing.
   const snap = (d?: string): string | undefined => {
     if (!d) return undefined;
     const idx = traj.findIndex(p => p.date === d);
     return idx < 0 ? undefined : chartData[Math.round(idx / 6)]?.date;
   };
 
-  // Light milestone markers for the wealth view.
-  const milestones = ([
-    { x: snap(retireDate), c: "#2a7a68", l: "Exit" },
-    cp.use_sabbatical && { x: snap(findDate(d => d.currentPhase === "SABBATICAL")), c: "#d98a3d", l: "Sab" },
-    cp.use_jump       && { x: snap(findDate(d => d.currentPhase === "JUMP")),       c: "#2a9d7f", l: "Jump" },
-    cp.use_bridge     && { x: snap(findDate(d => d.currentPhase === "BRIDGE")),     c: "#3a7d9c", l: "Bridge" },
-    { x: snap(fullRetireDate), c: "#7a6da8", l: "Retire" },
-    config.spending.empty_nest_year && { x: snap(findDate(p => p.date.includes(String(config.spending.empty_nest_year)))), c: C.warm, l: "Nest" },
-    { x: snap(findDate(p => p.date === "Jun 2051")), c: "#9bbdb4", l: "Paid" },
-    indep && { x: snap(indep.date), c: "#80c4ae", l: "FI" },
-  ].filter(Boolean) as { x?: string; c: string; l: string }[]).filter(m => m.x) as { x: string; c: string; l: string }[];
+  // Milestones live in the flyout (not on the chart). Keyed by snapped chart
+  // date → list of milestones revealed when you scrub to that point.
+  const milestoneMap: Record<string, { label: string; c: string }[]> = {};
+  const addMile = (raw: string | undefined, label: string, c: string) => {
+    const s = snap(raw);
+    if (!s) return;
+    (milestoneMap[s] ||= []).push({ label, c });
+  };
+  const by = config.birth_year ?? 1980;
+  addMile(retireDate, "Leave Google", "#2a7a68");
+  if (cp.use_sabbatical) addMile(findDate(d => d.currentPhase === "SABBATICAL"), "Sabbatical begins", "#d98a3d");
+  if (cp.use_jump)       addMile(findDate(d => d.currentPhase === "JUMP"),       "Career jump begins", "#2a9d7f");
+  if (cp.use_bridge)     addMile(findDate(d => d.currentPhase === "BRIDGE"),     "Bridge job begins", "#3a7d9c");
+  if (fullRetireDate)    addMile(fullRetireDate, "Full retirement 🌿", "#7a6da8");
+  if (config.spending.empty_nest_year) addMile(findDate(p => p.date.includes(String(config.spending.empty_nest_year))), "Empty nest", C.warm);
+  addMile(findDate(p => p.date === "Jun 2051"), "Mortgage paid off", "#9bbdb4");
+  if (indep) addMile(indep.date, "Financial independence 🎉", "#80c4ae");
+  if (config.social_security) addMile(findDate(p => p.date.includes(String(by + config.social_security.start_age))), "Social Security starts", C.warm);
+  if (config.medicare)        addMile(findDate(p => p.date.includes(String(by + config.medicare.start_age))),        "Medicare starts", "#9bbdb4");
+  for (const ev of config.life_events ?? []) addMile(findDate(p => p.date.includes(String(ev.year))), ev.name, "#b9895e");
+  for (const ev of getLifeEvents()) addMile(findDate(p => p.date.includes(String(ev.year))), `${ev.icon} ${ev.childName}: ${ev.shortLabel}`, C.tealDark);
 
   return (
     <div style={{ padding: "16px 16px 8px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -159,16 +170,10 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
               interval="preserveStartEnd" minTickGap={50}
               tickFormatter={(d: string) => d.split(" ")[1] ?? d} />
             <YAxis tick={{ fill: C.inkFaint, fontSize: 9 }} axisLine={false} tickLine={false} width={40} tickFormatter={fmtM} />
-            <Tooltip content={<MobileTooltip birthYear={birthYear} perYear={view !== "wealth"} />} />
+            <Tooltip content={<MobileTooltip birthYear={birthYear} perYear={view !== "wealth"} milestones={milestoneMap} />} />
 
             {view === "wealth" && (
-              <>
-                {milestones.map((m, i) => (
-                  <ReferenceLine key={m.l} x={m.x} stroke={m.c} strokeDasharray="2 3" strokeOpacity={0.5}
-                    label={<MileLabel value={m.l} fill={m.c} row={i % 2} />} />
-                ))}
-                <Area type="monotone" dataKey="totalNetWorth" stroke={C.teal} strokeWidth={2.5} fill="url(#mWealth)" name="Net Worth" />
-              </>
+              <Area type="monotone" dataKey="totalNetWorth" stroke={C.teal} strokeWidth={2.5} fill="url(#mWealth)" name="Net Worth" />
             )}
             {view === "income" && (
               <>
@@ -209,20 +214,6 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
   );
 }
 
-// Tiny milestone label for the mobile chart — alternates two rows to reduce overlap.
-function MileLabel({ viewBox, value, fill, row = 0 }: any) {
-  if (!viewBox) return null;
-  const { x } = viewBox;
-  const w = value.length * 5.2 + 8;
-  const y = 2 + row * 14;
-  return (
-    <g>
-      <rect x={x - w / 2} y={y} width={w} height={12} rx={3} fill={fill} fillOpacity={0.14} />
-      <text x={x} y={y + 9} textAnchor="middle" fontSize={8} fontWeight={700} fill={fill}>{value}</text>
-    </g>
-  );
-}
-
 function Chip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div style={{
@@ -236,14 +227,15 @@ function Chip({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-function MobileTooltip({ active, payload, label, birthYear, perYear }: any) {
+function MobileTooltip({ active, payload, label, birthYear, perYear, milestones }: any) {
   if (!active || !payload?.length) return null;
   const yr = parseInt((label as string).split(" ")[1] ?? "");
   const age = yr && birthYear ? yr - birthYear : null;
   const rows = payload.filter((p: any) => p.value != null && p.value !== 0);
   const total = perYear ? rows.reduce((s: number, p: any) => s + p.value, 0) : null;
+  const ms: { label: string; c: string }[] = milestones?.[label] ?? [];
   return (
-    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 11, boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
+    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 11, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxWidth: 220 }}>
       <div style={{ color: C.inkSoft, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>
         {label}{age ? ` · Age ${age}` : ""}{perYear ? " · /yr" : ""}
       </div>
@@ -257,6 +249,16 @@ function MobileTooltip({ active, payload, label, birthYear, perYear }: any) {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 14, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.borderSoft}` }}>
           <span style={{ color: C.inkSoft, fontWeight: 700 }}>Total</span>
           <span style={{ fontWeight: 700, color: C.ink }}>{fmtFull(total)}</span>
+        </div>
+      )}
+      {ms.length > 0 && (
+        <div style={{ marginTop: rows.length ? 7 : 0, paddingTop: rows.length ? 7 : 0, borderTop: rows.length ? `1px solid ${C.borderSoft}` : "none", display: "flex", flexDirection: "column", gap: 4 }}>
+          {ms.map((m, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: m.c, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.ink }}>{m.label}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

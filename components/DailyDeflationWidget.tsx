@@ -63,14 +63,14 @@ export default function DailyDeflationWidget() {
   return (
     <div>
       {/* ── Header ── */}
-      <div className="mb-10">
+      <div className="mb-6">
         <h2 style={{ color: C.ink }} className="text-2xl font-light tracking-tight mb-2">Daily Deflation</h2>
         <p style={{ color: C.inkSoft }} className="text-sm">
           15 minutes. Every evening. The protocol that keeps work at work.
         </p>
       </div>
 
-      <div className="grid gap-8" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)" }}>
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
 
         {/* ── Left column: Timer + Protocol ── */}
         <div className="flex flex-col gap-5">
