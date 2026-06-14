@@ -82,25 +82,42 @@ const TabBtn = ({ active, onClick, children }: { active: boolean; onClick: () =>
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
-const ChartTooltip = ({ active, payload, label, birthYear }: any) => {
+const fmtFull = (v: number) =>
+  `${v < 0 ? "-" : ""}$${Math.abs(Math.round(v)).toLocaleString()}`;
+
+const ChartTooltip = ({ active, payload, label, birthYear, perYear }: any) => {
   if (!active || !payload?.length) return null;
   const parts = (label as string).split(" ");
   const yr = parts.length === 2 ? parseInt(parts[1]) : null;
   const age = yr && birthYear ? yr - birthYear : null;
 
+  // For income/expense breakdowns the values are annual flows — show the exact
+  // dollar amount with "/yr" so it's unambiguous and easy to read. Net-worth
+  // values stay abbreviated ($1.2M) since precision there is noise.
+  const rows = payload.filter((p: any) => p.value != null && p.value !== 0);
+  const total = perYear ? rows.reduce((s: number, p: any) => s + (p.value as number), 0) : null;
+
   return (
     <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 11, boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}>
       <div style={{ color: C.inkSoft, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
-        {label}{age ? ` · Age ${age}` : ""}
+        {label}{age ? ` · Age ${age}` : ""}{perYear ? " · per year" : ""}
       </div>
-      {payload.map((p: any) => (
+      {rows.map((p: any) => (
         <div key={p.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 3 }}>
           <span style={{ color: p.color ?? C.inkSoft }}>{p.name}</span>
           <span style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>
-            {fmtM(p.value as number)}
+            {perYear ? `${fmtFull(p.value as number)}/yr` : fmtM(p.value as number)}
           </span>
         </div>
       ))}
+      {total != null && rows.length > 1 && (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 5, paddingTop: 5, borderTop: `1px solid ${C.borderSoft}` }}>
+          <span style={{ color: C.inkSoft, fontWeight: 700 }}>Total</span>
+          <span style={{ fontWeight: 700, color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+            {fmtFull(total)}/yr
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -395,7 +412,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
                   tick={{ fill: C.inkFaint, fontSize: 10 }}
                   tickFormatter={fmtM} width={52}
                   domain={chartView === "wealth" ? ["auto", "auto"] : [0, "auto"]} />
-                <Tooltip content={<ChartTooltip birthYear={birthYear} />} />
+                <Tooltip content={<ChartTooltip birthYear={birthYear} perYear={chartView === "income" || chartView === "expenses"} />} />
 
                 {chartView === "wealth" && (
                   <>

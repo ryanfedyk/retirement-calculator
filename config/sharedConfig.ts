@@ -136,7 +136,7 @@ export const DEFAULT_SIM_CONFIG: SimulationConfiguration = {
   spending: {
     monthly_lifestyle:         9_500,
     empty_nest_year:           2039,
-    empty_nest_monthly_spend:  7_000,
+    empty_nest_monthly_spend:  8_000,
     healthcare_premium:        2_500,
     mortgage_payment:          7_435.67,
   },

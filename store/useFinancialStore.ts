@@ -88,7 +88,7 @@ export const useFinancialStore = create<FinancialStore>()(
       resetToDefaults: () => set({ snapshot: DEFAULT_SNAPSHOT, config: DEFAULT_SIM_CONFIG }),
     }),
     {
-      name:    "horizon-financial-v5",
+      name:    "horizon-financial-v6",
       storage: createJSONStorage(() => localStorage),
     }
   )
