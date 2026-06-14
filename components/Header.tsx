@@ -34,7 +34,7 @@ export default function Header({ view, onViewChange }: Props) {
           display: "flex", background: C.bg, border: `1px solid ${C.border}`,
           borderRadius: 20, padding: 3, gap: 2,
         }}>
-          {(["forecasting", "financial"] as AppView[]).map(v => (
+          {(["financial", "forecasting"] as AppView[]).map(v => (
             <button
               key={v}
               onClick={() => onViewChange(v)}

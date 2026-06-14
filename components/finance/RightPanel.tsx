@@ -216,6 +216,11 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   const sabbDateStr    = trajectoryData.some(d => d.currentPhase === "SABBATICAL") ? findDate(d => d.currentPhase === "SABBATICAL") : null;
   const jumpDateStr    = trajectoryData.some(d => d.currentPhase === "JUMP")       ? findDate(d => d.currentPhase === "JUMP")       : null;
   const bridgeDateStr  = trajectoryData.some(d => d.currentPhase === "BRIDGE")     ? findDate(d => d.currentPhase === "BRIDGE")     : null;
+  // When any post-Google phase is modeled, mark the date the user reaches FULL
+  // retirement (after sabbatical / jump / bridge all end).
+  const cpx = config.career_path;
+  const hasPostPhases  = cpx.use_sabbatical || cpx.use_jump || cpx.use_bridge;
+  const fullRetireDateStr = hasPostPhases ? findDate(d => d.currentPhase === "RETIRED") : null;
   const ssDateStr      = config.social_security ? findDate(p => p.date.includes(String(birthYear + config.social_security!.start_age))) : null;
   const medDateStr     = config.medicare        ? findDate(p => p.date.includes(String(birthYear + config.medicare!.start_age)))        : null;
   const mortgageDateStr = findDate(p => p.date === "Jun 2051");
@@ -252,6 +257,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
     if (sabbDateStr)     m.push({ x: sabbDateStr,     stroke: "#d98a3d", label: "Sabbatical", primary: true  });
     if (jumpDateStr)     m.push({ x: jumpDateStr,     stroke: "#2a9d7f", label: "Career Jump",primary: true  });
     if (bridgeDateStr)   m.push({ x: bridgeDateStr,   stroke: "#3a7d9c", label: "Bridge Job", primary: true  });
+    if (fullRetireDateStr) m.push({ x: fullRetireDateStr, stroke: "#7a6da8", label: "Full Retirement", primary: true });
     // Secondary — benefits and life events (subtle until hovered)
     if (ssDateStr)       m.push({ x: ssDateStr,       stroke: C.warm,    label: "Soc. Sec.",  primary: false });
     if (medDateStr)      m.push({ x: medDateStr,      stroke: "#9bbdb4", label: "Medicare",   primary: false });
@@ -269,12 +275,19 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
     return m;
   })();
 
-  // yOffset staggering so simultaneously-visible pills don't overlap.
+  // Stagger pill labels by chronological position so neighbouring markers land
+  // on different rows (prevents clustered pills like Retire/Full Retirement from
+  // overlapping). Build an order index from each milestone's spot in the timeline.
+  const dateOrder = (x: string) => trajectoryData.findIndex(p => p.date === x);
+  const orderRank = new Map(
+    [...milestones].sort((a, b) => dateOrder(a.x) - dateOrder(b.x)).map((m, idx) => [m.x + m.label, idx])
+  );
+
   const renderRefLines = () => (
     <>
-      {milestones.map(({ x, stroke, label, primary }, i) => {
+      {milestones.map(({ x, stroke, label, primary }) => {
         const revealed = primary || yearOf(x) === hoverYear;
-        const yOffset  = (i % 3) * 22;
+        const yOffset  = ((orderRank.get(x + label) ?? 0) % 4) * 20;
         return (
           <ReferenceLine
             key={`${label}-${x}`}

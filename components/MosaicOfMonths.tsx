@@ -213,7 +213,6 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
   const lifeEvents = getLifeEvents(retirementDate);
 
   const [hovered,   setHovered]   = useState<MonthCell | null>(null);
-  const [showPanel, setShowPanel] = useState(true);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
 
   const now         = new Date();
@@ -238,35 +237,21 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
     });
   }, []);
 
-  // Merged sidebar events: birthdays + life events, sorted chronologically
-  const sidebarEvents = [
-    ...lifeEvents.map(ev => ({ type: "life" as const, ev, monthsAway: ev.monthsAway, sortKey: ev.year * 12 + ev.month })),
-  ].sort((a, b) => a.sortKey - b.sortKey);
-
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 style={{ color: C.ink }} className="text-xl font-light tracking-tight mb-1">Mosaic of Months</h2>
-          <p style={{ color: C.inkSoft }} className="text-xs leading-relaxed">
-            <span style={{ color: C.ink }} className="font-medium">{futureCells}</span> months ahead.{" "}
-            <span style={{ color: C.inkFaint }}>{pastCells} months behind you.</span>{" "}
-            Retirement: {retirementDate.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}.
-          </p>
-        </div>
-        <button onClick={() => setShowPanel(v => !v)}
-                className="text-[11px] px-4 py-2 rounded-full border transition-all duration-200 cursor-pointer tracking-wide uppercase shrink-0"
-                style={{ borderColor: showPanel ? C.teal : C.border, color: showPanel ? C.teal : C.inkSoft, background: showPanel ? C.tealWash : "transparent" }}>
-          Milestones
-        </button>
+      <div className="mb-5">
+        <h2 style={{ color: C.ink }} className="text-xl font-light tracking-tight mb-1">Mosaic of Months</h2>
+        <p style={{ color: C.inkSoft }} className="text-xs leading-relaxed">
+          <span style={{ color: C.ink }} className="font-medium">{futureCells}</span> months ahead.{" "}
+          <span style={{ color: C.inkFaint }}>{pastCells} months behind you.</span>{" "}
+          Retirement: {retirementDate.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}.
+        </p>
       </div>
 
-      {/* Two-column layout */}
-      <div className="flex gap-6 items-start">
-
-        {/* ── Grid ── */}
-        <div className="flex-1 min-w-0" style={{ maxWidth: 480 }}>
+      {/* Grid (full width) */}
+      <div>
+        <div className="w-full">
 
           {/* Info bar */}
           <p style={{ color: C.inkFaint }} className="text-[11px] mb-3">
@@ -366,55 +351,6 @@ export default function MosaicOfMonths({ pinnedAdventures }: Props) {
             </span>
           </div>
         </div>
-
-        {/* ── Milestones panel ── */}
-        {showPanel && (
-          <div className="shrink-0 w-72 flex flex-col gap-3">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: C.teal }} />
-              <p style={{ color: C.inkFaint }} className="text-[10px] uppercase tracking-widest">
-                Milestones before retirement
-              </p>
-            </div>
-
-            {sidebarEvents.length === 0 && (
-              <p style={{ color: C.inkFaint }} className="text-xs italic">No events in window.</p>
-            )}
-
-            {sidebarEvents.map(({ ev }, i) => {
-              const isOona  = ev.childName === "Oona";
-              const accent  = isOona ? C.teal : C.phase[2];
-              const bg      = isOona ? C.tealWash : `${C.phase[2]}18`;
-              return (
-                <div key={i} className="p-4 rounded-xl border"
-                     style={{ background: C.bgCard, borderColor: C.borderSoft, borderLeft: `3px solid ${accent}` }}>
-                  <div className="flex items-start justify-between mb-1.5 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base shrink-0">{ev.icon}</span>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                                style={{ background: bg, color: accent }}>
-                            {ev.childName}
-                          </span>
-                          <span style={{ color: C.ink }} className="text-xs font-semibold truncate">{ev.shortLabel}</span>
-                        </div>
-                        <p style={{ color: C.inkFaint }} className="text-[10px] mt-0.5">
-                          {new Date(ev.year, ev.month).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                          {" · "}age {ev.age}
-                        </p>
-                      </div>
-                    </div>
-                    <span style={{ color: C.inkFaint }} className="text-[10px] tabular-nums shrink-0">
-                      {ev.monthsAway === 1 ? "next mo" : `${ev.monthsAway}mo`}
-                    </span>
-                  </div>
-                  <p style={{ color: C.inkMid }} className="text-[11px] leading-relaxed italic">{ev.note}</p>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
     </div>
   );

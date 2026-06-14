@@ -5,6 +5,8 @@ import { HORIZON_CONFIG } from "@/config/horizonConfig";
 import { C } from "@/config/colors";
 import Header, { type AppView } from "@/components/Header";
 import CountdownStrip        from "@/components/CountdownStrip";
+import { useIsMobile }       from "@/hooks/useIsMobile";
+import MobileApp             from "@/components/mobile/MobileApp";
 import { useRetirementDate } from "@/hooks/useRetirementDate";
 import FlightMap             from "@/components/FlightMap";
 import MacroSeasonsTimeline  from "@/components/MacroSeasonsTimeline";
@@ -23,15 +25,21 @@ const NAV = [
 type NavId = typeof NAV[number]["id"];
 
 export default function HorizonDashboard() {
-  const [appView, setAppView] = useState<AppView>("forecasting");
+  const [appView, setAppView] = useState<AppView>("financial");
   const [tab,   setTab]   = useState<NavId>("seasons");
   const [saved, setSaved] = useState<AdventureBlueprint[]>([]);
   const { retirementDate } = useRetirementDate();
+  const isMobile = useIsMobile();
+
+  if (isMobile) return <MobileApp />;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: C.bg }}>
 
       <Header view={appView} onViewChange={setAppView} />
+
+      {/* Countdown — shown across both views */}
+      <CountdownStrip />
 
       {/* ── Financial View ── */}
       {appView === "financial" && (
@@ -43,7 +51,6 @@ export default function HorizonDashboard() {
       {/* ── Forecasting View ── */}
       {appView === "forecasting" && (
         <>
-          <CountdownStrip />
           <FlightMap pinnedAdventures={saved} />
 
           {/* Nav */}

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { C } from "@/config/colors";
 import { useMacroSeasons } from "@/hooks/useMacroSeasons";
@@ -8,9 +8,18 @@ export default function MacroSeasonsTimeline() {
   const { seasons, currentIndex, source } = useMacroSeasons();
   const current = seasons[currentIndex];
   const [expanded, setExpanded] = useState<number>(current?.id ?? 0);
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   // Keep the expanded card in sync when the timeline changes shape.
   useEffect(() => { setExpanded(current?.id ?? 0); }, [current?.id]);
+
+  // Expand a season's card and smooth-scroll it into view.
+  const goToSeason = (id: number) => {
+    setExpanded(id);
+    requestAnimationFrame(() =>
+      cardRefs.current[id]?.scrollIntoView({ behavior: "smooth", block: "center" })
+    );
+  };
 
   if (!seasons.length || !current) return null;
 
@@ -57,42 +66,41 @@ export default function MacroSeasonsTimeline() {
           The Roadmap
         </p>
 
-        {/* Segmented bar */}
-        <div className="flex rounded-xl overflow-hidden h-8 mb-3" style={{ gap: 2 }}>
+        {/* Segmented bar — scrolls horizontally when there are many seasons */}
+        <div className="flex rounded-xl h-9 mb-3" style={{ gap: 2, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none" }}>
           {seasons.map((s, i) => {
             const isActive = i === currentIndex;
             const isPast   = i < currentIndex;
             return (
               <div
                 key={s.id}
-                className="flex-1 relative flex items-center justify-center cursor-pointer transition-all duration-200"
+                className="relative flex items-center justify-center cursor-pointer transition-all duration-200"
                 style={{
+                  flex: "1 0 78px", minWidth: 78,
+                  borderRadius: i === 0 ? "10px 0 0 10px" : i === seasons.length - 1 ? "0 10px 10px 0" : 0,
                   backgroundColor: isPast ? `${s.color}55` : isActive ? s.color : `${s.color}33`,
                   borderBottom: isActive ? `3px solid ${s.color}` : "none",
                 }}
-                onClick={() => setExpanded(s.id)}
+                onClick={() => goToSeason(s.id)}
               >
-                <span className="text-[9px] font-semibold uppercase tracking-wider truncate px-1"
-                      style={{ color: isPast ? C.inkFaint : isActive ? "white" : C.inkFaint }}>
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1"
+                      style={{ color: isPast ? C.inkFaint : isActive ? "white" : C.inkFaint, whiteSpace: "nowrap" }}>
                   {s.label}
                 </span>
-                {isActive && (
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45"
-                       style={{ background: s.color }} />
-                )}
               </div>
             );
           })}
         </div>
 
-        {/* Phase labels row */}
-        <div className="flex" style={{ gap: 2 }}>
+        {/* Phase labels row — same horizontal rhythm */}
+        <div className="flex" style={{ gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
           {seasons.map((s, i) => (
-            <div key={s.id} className="flex-1 text-center min-w-0">
-              <p className="text-[9px] truncate px-0.5" style={{ color: i === currentIndex ? s.color : C.inkFaint }}>
+            <button key={s.id} onClick={() => goToSeason(s.id)}
+                    className="text-center cursor-pointer" style={{ flex: "1 0 78px", minWidth: 78 }}>
+              <p className="text-[10px] truncate px-1" style={{ color: i === currentIndex ? s.color : C.inkFaint }}>
                 {s.name}
               </p>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -219,8 +227,10 @@ export default function MacroSeasonsTimeline() {
           return (
             <div
               key={s.id}
+              ref={(el) => { cardRefs.current[s.id] = el; }}
               className="rounded-2xl border transition-all duration-300 overflow-hidden"
               style={{
+                scrollMarginTop: 80,
                 background:  isExpanded ? C.bgCard : "transparent",
                 borderColor: C.borderSoft,
                 opacity:     isPast && !isExpanded ? 0.45 : 1,
