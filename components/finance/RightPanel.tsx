@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { Flag, CheckCircle, TrendingUp, CalendarDays, RefreshCw, Sparkles } from "lucide-react";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint } from "@/engine/calculator";
 import type { TrajectoryPoint } from "@/engine/calculator";
 import { C } from "@/config/colors";
 import LifeCalendar from "./LifeCalendar";
@@ -188,7 +188,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
   );
 
   // Key metrics
-  const indepPoint     = trajectoryData.find(d => d.isIndependent);
+  const indepPoint     = findIndependencePoint(trajectoryData);
   const todayPoint     = trajectoryData[0];
   const currentNW      = todayPoint?.totalNetWorth ?? 0;
   const swrTarget      = todayPoint?.swrTarget ?? 0;

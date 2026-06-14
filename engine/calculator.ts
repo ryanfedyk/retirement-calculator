@@ -724,3 +724,22 @@ export const runSimulation = (
 
   return points;
 };
+
+/**
+ * The TRUE financial-independence point: the start of the final, sustained run
+ * where assets remain ≥ the SWR target for the rest of the horizon.
+ *
+ * Using a plain `.find(isIndependent)` is unstable — assets briefly cross the
+ * threshold during the GOOG divestment windfall, then dip back below, so the
+ * marker jumps around (or vanishes) as inputs change. This returns the durable
+ * crossing instead: undefined if the plan never reaches lasting independence.
+ */
+export function findIndependencePoint(points: TrajectoryPoint[]): TrajectoryPoint | undefined {
+  if (!points.length || !points[points.length - 1].isIndependent) return undefined;
+  let fi: TrajectoryPoint | undefined;
+  for (let i = points.length - 1; i >= 0; i--) {
+    if (!points[i].isIndependent) break;
+    fi = points[i];
+  }
+  return fi;
+}

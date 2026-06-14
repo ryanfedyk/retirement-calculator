@@ -1,10 +1,10 @@
 "use client";
 import { useState, useMemo } from "react";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from "recharts";
 import { RefreshCw, ChevronRight } from "lucide-react";
 import { C } from "@/config/colors";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint } from "@/engine/calculator";
 import { getLifeEvents } from "@/lib/horizonUtils";
 import type { LivePrices } from "@/components/finance/FinancialDashboard";
 
@@ -46,7 +46,7 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
     [enrichedSnapshot, config, liveGoogPrice]
   );
 
-  const indep    = traj.find(d => d.isIndependent);
+  const indep    = findIndependencePoint(traj);
   const today    = traj[0];
   const currentNW = today?.totalNetWorth ?? 0;
   const swrTarget = today?.swrTarget ?? 0;
@@ -107,6 +107,19 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
   if (config.medicare)        addMile(findDate(p => p.date.includes(String(by + config.medicare.start_age))),        "Medicare starts", "#9bbdb4");
   for (const ev of config.life_events ?? []) addMile(findDate(p => p.date.includes(String(ev.year))), ev.name, "#b9895e");
   for (const ev of getLifeEvents()) addMile(findDate(p => p.date.includes(String(ev.year))), `${ev.icon} ${ev.childName}: ${ev.shortLabel}`, C.tealDark);
+
+  // KEY milestones also get a light marker on the chart itself (the rest stay
+  // flyout-only). Snapped + short-labelled to avoid clutter.
+  const keyMarkers = ([
+    { x: snap(retireDate), c: "#2a7a68", l: "Exit" },
+    cp.use_sabbatical && { x: snap(findDate(d => d.currentPhase === "SABBATICAL")), c: "#d98a3d", l: "Sab" },
+    cp.use_jump       && { x: snap(findDate(d => d.currentPhase === "JUMP")),       c: "#2a9d7f", l: "Jump" },
+    cp.use_bridge     && { x: snap(findDate(d => d.currentPhase === "BRIDGE")),     c: "#3a7d9c", l: "Bridge" },
+    fullRetireDate    && { x: snap(fullRetireDate), c: "#7a6da8", l: "Retire" },
+    config.spending.empty_nest_year && { x: snap(findDate(p => p.date.includes(String(config.spending.empty_nest_year)))), c: C.warm, l: "Nest" },
+    { x: snap(findDate(p => p.date === "Jun 2051")), c: "#9bbdb4", l: "Paid" },
+    indep && { x: snap(indep.date), c: "#80c4ae", l: "FI" },
+  ].filter(Boolean) as { x?: string; c: string; l: string }[]).filter(m => m.x) as { x: string; c: string; l: string }[];
 
   return (
     <div style={{ padding: "16px 16px 8px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -173,7 +186,13 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
             <Tooltip content={<MobileTooltip birthYear={birthYear} perYear={view !== "wealth"} milestones={milestoneMap} />} />
 
             {view === "wealth" && (
-              <Area type="monotone" dataKey="totalNetWorth" stroke={C.teal} strokeWidth={2.5} fill="url(#mWealth)" name="Net Worth" />
+              <>
+                {keyMarkers.map((m, i) => (
+                  <ReferenceLine key={m.l} x={m.x} stroke={m.c} strokeDasharray="2 3" strokeOpacity={0.5}
+                    label={<MileLabel value={m.l} fill={m.c} row={i % 2} />} />
+                ))}
+                <Area type="monotone" dataKey="totalNetWorth" stroke={C.teal} strokeWidth={2.5} fill="url(#mWealth)" name="Net Worth" />
+              </>
             )}
             {view === "income" && (
               <>
@@ -211,6 +230,20 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
         </div>
       </button>
     </div>
+  );
+}
+
+// Tiny milestone label for the mobile chart — alternates two rows to reduce overlap.
+function MileLabel({ viewBox, value, fill, row = 0 }: any) {
+  if (!viewBox) return null;
+  const { x } = viewBox;
+  const w = value.length * 5.2 + 8;
+  const y = 2 + row * 14;
+  return (
+    <g>
+      <rect x={x - w / 2} y={y} width={w} height={12} rx={3} fill={fill} fillOpacity={0.14} />
+      <text x={x} y={y + 9} textAnchor="middle" fontSize={8} fontWeight={700} fill={fill}>{value}</text>
+    </g>
   );
 }
 
