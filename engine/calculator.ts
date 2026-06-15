@@ -673,19 +673,23 @@ export const runSimulation = (
     const investableAssets = liquidCash + totalRetirement + currentGoogValue
       + currentJumpStockValue + totalOtherInvestmentsValue;
 
-    // SWR target uses normalized retirement spending (no mortgage, no one-time events).
-    // Roth assets can be withdrawn tax-free → lower effective tax drag.
-    const rothFraction = investableAssets > 0 ? rothBalance / investableAssets : 0;
-    const effectiveTaxDrag = phase === 'RETIRED'
-      ? 0.20 * (1 - rothFraction)  // Roth withdrawals incur 0% tax drag
-      : 0.25;
+    // ── FI target — the classic "Rule of 25" (4% Safe Withdrawal Rate) ────────
+    // FI Number = (Annual Expenses − Guaranteed/Passive Income) ÷ SWR.
+    // Expenses use normalized retirement spending (lifestyle + healthcare; the
+    // mortgage is finite and excluded). Passive income (rental + Social Security,
+    // net of tax) is subtracted because it permanently offsets expenses, lowering
+    // the nest egg you need.
+    const SWR = 0.04; // 4% safe withdrawal rate (Rule of 25 → ×25)
     // baseMonthlySpend is in today's dollars (inflate it); currentHealthcareCost
     // is ALREADY inflation-adjusted above, so it must not be inflated again.
-    const swrBaseSpend      = baseMonthlySpend * inflationMultiplier + currentHealthcareCost;
-    const rawSWRTarget      = (swrBaseSpend * 12) / 0.04;
-    const adjustedSWRTarget = rawSWRTarget / Math.max(0.5, 1 - effectiveTaxDrag);
+    const annualExpenses      = (baseMonthlySpend * inflationMultiplier + currentHealthcareCost) * 12;
+    const annualPassiveIncome = (monthlyRentalNet + socialSecurityIncome) * 12; // rental + SS, net
+    const netAnnualNeed       = Math.max(0, annualExpenses - annualPassiveIncome);
+    const swrTargetValue      = netAnnualNeed / SWR; // the FI Number (25× the net need)
 
-    const isIndependent = adjustedSWRTarget > 0 && investableAssets / adjustedSWRTarget >= 1.0;
+    // Independent once investable assets cover the FI Number (or passive income
+    // alone already covers expenses → need is zero).
+    const isIndependent = investableAssets >= swrTargetValue;
 
     // ── Chart fields ──────────────────────────────────────────────────────
     const equityPart    = monthlyEquityVestUnits > 0 ? monthlyEquityVestUnits * (1 - marginalRate) * currentGoogPrice : 0;
@@ -706,7 +710,7 @@ export const runSimulation = (
       totalNetWorth:    Math.round(totalNetWorth),
       totalLiabilities: Math.round(totalLiabilities),
       isIndependent,
-      swrTarget:  Math.round(adjustedSWRTarget),
+      swrTarget:  Math.round(swrTargetValue),
       currentPhase: phase,
       salaryAndEquityNet: Math.round(salaryAndEquityNet),
       rentalIncomeNet:    Math.round(rentalIncomeNet),

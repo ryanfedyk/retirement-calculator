@@ -336,9 +336,9 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
           iconColor={indepPoint ? C.teal : C.inkFaint}
         />
         <SummaryCard
-          label="Target Net Worth"
+          label="FI Number (Rule of 25)"
           value={`$${(swrTarget / 1_000_000).toFixed(2)}M`}
-          sub={`Based on $${((config.spending.monthly_lifestyle + config.spending.healthcare_premium) / 1000).toFixed(1)}k/mo spend`}
+          sub={`25× expenses net of rental & SS, at a 4% withdrawal rate`}
           icon={CheckCircle}
           iconBg={C.tealWash}
           iconColor={C.teal}
