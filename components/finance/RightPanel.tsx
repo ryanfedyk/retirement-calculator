@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { Flag, CheckCircle, TrendingUp, CalendarDays, RefreshCw, Sparkles } from "lucide-react";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation, findIndependencePoint, continuousFiMonth } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint } from "@/engine/calculator";
 import type { TrajectoryPoint } from "@/engine/calculator";
 import { TodaysDelta, MomentumTurnstile, WhatIfChips } from "./MotivationWidgets";
 import { C } from "@/config/colors";
@@ -486,8 +486,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
       )}
 
       {/* ── What-if scenarios ── */}
-      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice}
-        baselineFiMonth={continuousFiMonth(trajectoryData)} />
+      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
 
       {/* ── AI Analysis ── */}
       {(() => {

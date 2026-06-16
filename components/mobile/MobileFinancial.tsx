@@ -4,7 +4,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceL
 import { RefreshCw, ChevronRight } from "lucide-react";
 import { C } from "@/config/colors";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation, findIndependencePoint, continuousFiMonth } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint } from "@/engine/calculator";
 import { getLifeEvents } from "@/lib/horizonUtils";
 import { TodaysDelta, MomentumTurnstile, WhatIfChips } from "@/components/finance/MotivationWidgets";
 import type { LivePrices } from "@/components/finance/FinancialDashboard";
@@ -218,8 +218,7 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
       </div>
 
       {/* What-if scenarios */}
-      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice}
-        baselineFiMonth={continuousFiMonth(traj)} />
+      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
 
       {/* Config summary — tap to open the full editor */}
       <button onClick={onOpenConfig} style={{

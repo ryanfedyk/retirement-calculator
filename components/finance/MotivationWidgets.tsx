@@ -199,24 +199,57 @@ function buildMomentumCards(point: TrajectoryPoint, config: SimulationConfigurat
   ];
 }
 
-// ── 3. What-if scenario chips ─────────────────────────────────────────────────
-type Tweak = { label: string; apply: (c: SimulationConfiguration) => SimulationConfiguration };
+// ── 3. What-if scenario cards ─────────────────────────────────────────────────
+const fmtK = (v: number) => `$${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
+const signM = (v: number) => `${v >= 0 ? "+" : "−"}${fmtM(Math.abs(v))}`;
 
-export function WhatIfChips({ snapshot, config, liveGoogPrice, baselineFiMonth }: {
-  snapshot: FinancialSnapshot; config: SimulationConfiguration; liveGoogPrice: number; baselineFiMonth: number | undefined;
+export function WhatIfChips({ snapshot, config, liveGoogPrice }: {
+  snapshot: FinancialSnapshot; config: SimulationConfiguration; liveGoogPrice: number;
 }) {
-  const tweaks: Tweak[] = useMemo(() => [
-    { label: "Spend $1k less/mo", apply: c => ({ ...c, spending: { ...c.spending, monthly_lifestyle: Math.max(0, c.spending.monthly_lifestyle - 1000) } }) },
-    { label: "Spend $1k more/mo", apply: c => ({ ...c, spending: { ...c.spending, monthly_lifestyle: c.spending.monthly_lifestyle + 1000 } }) },
-    { label: "Work 1 more year",  apply: c => ({ ...c, career_path: { ...c.career_path, exit_year: c.career_path.exit_year + 1 } }) },
-    { label: "Leave 1 year early", apply: c => ({ ...c, career_path: { ...c.career_path, exit_year: c.career_path.exit_year - 1 } }) },
-    { label: "Market returns 5%", apply: c => ({ ...c, market_assumptions: { ...c.market_assumptions, market_return_rate: 5 } }) },
-  ], []);
+  const endYear = new Date().getFullYear() + 30;
 
-  const results = useMemo(() => tweaks.map(t => {
-    const m = continuousFiMonth(runSimulation(snapshot, t.apply(config), liveGoogPrice));
-    return { label: t.label, fiMonth: m };
-  }), [tweaks, snapshot, config, liveGoogPrice]);
+  const scenarios = useMemo(() => {
+    const exit  = config.career_path.exit_year;
+    const spend = config.spending.monthly_lifestyle;
+    const ret   = config.market_assumptions.market_return_rate;
+    return [
+      {
+        title: `Work through ${exit + 1}`,
+        sub: "one more year before you leave",
+        apply: (c: SimulationConfiguration) => ({ ...c, career_path: { ...c.career_path, exit_year: exit + 1 } }),
+      },
+      {
+        title: `Leave in ${exit - 1}`,
+        sub: "retire a year sooner",
+        apply: (c: SimulationConfiguration) => ({ ...c, career_path: { ...c.career_path, exit_year: exit - 1 } }),
+      },
+      {
+        title: `Spend ${fmtK(Math.max(0, spend - 1000))}/mo`,
+        sub: `trim $1k from ${fmtK(spend)}`,
+        apply: (c: SimulationConfiguration) => ({ ...c, spending: { ...c.spending, monthly_lifestyle: Math.max(0, spend - 1000) } }),
+      },
+      {
+        title: `Markets cool to ${(ret - 2).toFixed(0)}%`,
+        sub: `vs your ${ret.toFixed(0)}% assumption`,
+        apply: (c: SimulationConfiguration) => ({ ...c, market_assumptions: { ...c.market_assumptions, market_return_rate: ret - 2 } }),
+      },
+    ];
+  }, [config]);
+
+  const { base, results } = useMemo(() => {
+    const baseTraj = runSimulation(snapshot, config, liveGoogPrice);
+    const baseFi = continuousFiMonth(baseTraj);
+    const baseFinal = baseTraj[baseTraj.length - 1]?.totalNetWorth ?? 0;
+    const results = scenarios.map(s => {
+      const t = runSimulation(snapshot, s.apply(config), liveGoogPrice);
+      return {
+        ...s,
+        fiMonth: continuousFiMonth(t),
+        finalNetWorth: t[t.length - 1]?.totalNetWorth ?? 0,
+      };
+    });
+    return { base: { fiMonth: baseFi, finalNetWorth: baseFinal }, results };
+  }, [scenarios, snapshot, config, liveGoogPrice]);
 
   return (
     <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
@@ -224,22 +257,29 @@ export function WhatIfChips({ snapshot, config, liveGoogPrice, baselineFiMonth }
         <Sparkles size={14} color={C.teal} />
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.inkSoft }}>What if…</span>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
         {results.map(r => {
-          const deltaMonths = baselineFiMonth != null && r.fiMonth != null ? Math.round(baselineFiMonth - r.fiMonth) : null;
-          const earlier = (deltaMonths ?? 0) > 0;
-          const noChange = deltaMonths === 0;
+          const dMonths = base.fiMonth != null && r.fiMonth != null ? Math.round(base.fiMonth - r.fiMonth) : null;
+          const dMoney  = r.finalNetWorth - base.finalNetWorth;
+          const earlier = (dMonths ?? 0) > 0;
           const fiLabel = r.fiMonth != null ? fmtDate(fiMonthToDate(r.fiMonth)) : "30+ yrs";
-          const accent = r.fiMonth == null ? C.inkSoft : noChange ? C.inkSoft : earlier ? C.tealDark : C.warm;
+          const fiDelta = dMonths == null ? "—" : dMonths === 0 ? "same FI date" : `${Math.abs(dMonths)} mo ${earlier ? "earlier" : "later"}`;
+          const fiColor = dMonths == null || dMonths === 0 ? C.inkSoft : earlier ? C.tealDark : C.warm;
+          const moneyColor = Math.abs(dMoney) < 1000 ? C.inkSoft : dMoney > 0 ? C.tealDark : C.warm;
           return (
-            <div key={r.label} style={{
-              flex: "1 1 150px", minWidth: 150, padding: "12px 14px", borderRadius: 12,
-              border: `1px solid ${C.borderSoft}`, background: C.bg,
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: C.inkMid, marginBottom: 6 }}>{r.label}</div>
-              <div style={{ fontSize: 18, fontWeight: 300, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fiLabel}</div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: accent, marginTop: 2 }}>
-                {deltaMonths == null ? "—" : noChange ? "no change" : `${Math.abs(deltaMonths)} mo ${earlier ? "earlier" : "later"}`}
+            <div key={r.title} style={{ padding: "14px 16px", borderRadius: 12, border: `1px solid ${C.borderSoft}`, background: C.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{r.title}</div>
+              <div style={{ fontSize: 11, color: C.inkFaint, marginBottom: 12 }}>{r.sub}</div>
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.inkFaint }}>Net worth ’{String(endYear).slice(2)}</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: moneyColor, fontVariantNumeric: "tabular-nums" }}>{signM(dMoney)}</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.inkFaint }}>FI date</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fiLabel}</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: fiColor }}>{fiDelta}</div>
+                </div>
               </div>
             </div>
           );
