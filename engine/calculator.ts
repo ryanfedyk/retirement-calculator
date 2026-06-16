@@ -127,7 +127,10 @@ export interface TrajectoryPoint {
   totalNetWorth: number;
   totalLiabilities: number;
   isIndependent: boolean;
-  swrTarget: number;
+  swrTarget: number;              // the FI Number (Rule of 25)
+  investableAssets: number;      // assets that fund retirement (excl. 529)
+  annualExpenseNeed: number;     // retirement annual expenses (incl self-paid healthcare)
+  annualPassiveIncome: number;   // rental + Social Security, net of tax
   currentPhase: 'GOOGLE' | 'SABBATICAL' | 'JUMP' | 'BRIDGE' | 'RETIRED';
   // Income — all NET of tax, annualised
   salaryAndEquityNet: number;
@@ -715,6 +718,9 @@ export const runSimulation = (
       totalLiabilities: Math.round(totalLiabilities),
       isIndependent,
       swrTarget:  Math.round(swrTargetValue),
+      investableAssets:    Math.round(investableAssets),
+      annualExpenseNeed:   Math.round(annualExpenses),
+      annualPassiveIncome: Math.round(annualPassiveIncome),
       currentPhase: phase,
       salaryAndEquityNet: Math.round(salaryAndEquityNet),
       rentalIncomeNet:    Math.round(rentalIncomeNet),
@@ -750,4 +756,23 @@ export function findIndependencePoint(points: TrajectoryPoint[]): TrajectoryPoin
     fi = points[i];
   }
   return fi;
+}
+
+/**
+ * Fractional month index at which assets cross the FI target, interpolated
+ * within the crossing month. Gives day-level resolution so small input changes
+ * (e.g. a daily GOOG move) shift the FI date by a meaningful amount.
+ * Returns undefined if FI is never durably reached, 0 if already independent.
+ */
+export function continuousFiMonth(points: TrajectoryPoint[]): number | undefined {
+  const fi = findIndependencePoint(points);
+  if (!fi) return undefined;
+  const i = fi.monthIndex;
+  if (i <= 0) return 0;
+  const prev = points[i - 1];
+  const gapPrev = prev.investableAssets - prev.swrTarget; // < 0
+  const gapNow  = fi.investableAssets  - fi.swrTarget;     // ≥ 0
+  const denom = gapNow - gapPrev;
+  const frac = denom > 0 ? Math.min(1, Math.max(0, -gapPrev / denom)) : 0;
+  return (i - 1) + frac;
 }

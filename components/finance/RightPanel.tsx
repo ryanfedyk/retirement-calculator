@@ -6,8 +6,9 @@ import {
 } from "recharts";
 import { Flag, CheckCircle, TrendingUp, CalendarDays, RefreshCw, Sparkles } from "lucide-react";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation, findIndependencePoint } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint, continuousFiMonth } from "@/engine/calculator";
 import type { TrajectoryPoint } from "@/engine/calculator";
+import { TodaysDelta, MomentumTurnstile, WhatIfChips } from "./MotivationWidgets";
 import { C } from "@/config/colors";
 import LifeCalendar from "./LifeCalendar";
 import type { LivePrices } from "./FinancialDashboard";
@@ -362,6 +363,10 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
         </SummaryCard>
       </div>
 
+      {/* ── Today's delta + momentum turnstile ── */}
+      <TodaysDelta trajectory={trajectoryData} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
+      {todayPoint && <MomentumTurnstile point={todayPoint} config={config} />}
+
       {/* ── Main chart ── */}
       <div style={{
         background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12,
@@ -479,6 +484,10 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
           ))}
         </div>
       )}
+
+      {/* ── What-if scenarios ── */}
+      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice}
+        baselineFiMonth={continuousFiMonth(trajectoryData)} />
 
       {/* ── AI Analysis ── */}
       {(() => {

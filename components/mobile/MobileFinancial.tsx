@@ -4,8 +4,9 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceL
 import { RefreshCw, ChevronRight } from "lucide-react";
 import { C } from "@/config/colors";
 import { useFinancialStore } from "@/store/useFinancialStore";
-import { runSimulation, findIndependencePoint } from "@/engine/calculator";
+import { runSimulation, findIndependencePoint, continuousFiMonth } from "@/engine/calculator";
 import { getLifeEvents } from "@/lib/horizonUtils";
+import { TodaysDelta, MomentumTurnstile, WhatIfChips } from "@/components/finance/MotivationWidgets";
 import type { LivePrices } from "@/components/finance/FinancialDashboard";
 
 const fmtM = (v: number) => {
@@ -156,6 +157,10 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
         <RefreshCw size={12} color={C.inkSoft} style={{ animation: pricesFetching ? "spin 0.8s linear infinite" : "none" }} />
       </button>
 
+      {/* Today's delta + momentum */}
+      <TodaysDelta trajectory={traj} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
+      {today && <MomentumTurnstile point={today} config={config} />}
+
       {/* Chart card — touchAction pan-y so dragging the chart never scrolls the page sideways */}
       <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "16px 12px 12px", touchAction: "pan-y" }}>
         {/* View pills */}
@@ -211,6 +216,10 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* What-if scenarios */}
+      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice}
+        baselineFiMonth={continuousFiMonth(traj)} />
 
       {/* Config summary — tap to open the full editor */}
       <button onClick={onOpenConfig} style={{
