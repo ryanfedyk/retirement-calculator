@@ -2,9 +2,9 @@
 // Using a JS constants object avoids CSS variable resolution issues in Tailwind v4.
 
 export const C = {
-  // Page surfaces
-  bg:         "#ecf3ef",   // pale sage-green wash
-  bgHeader:   "#e0ece7",   // slightly deeper for header
+  // Page surfaces — light, airy, majority white with the faintest mint tint
+  bg:         "#fafdfc",   // near-white page wash (barely-there mint)
+  bgHeader:   "#f2f8f6",   // very light mint band for header/footer
   bgCard:     "#ffffff",
 
   // Text — forest family, warm not cold
