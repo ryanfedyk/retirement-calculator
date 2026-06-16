@@ -487,7 +487,6 @@ export const runSimulation = (
     }
 
     // Healthcare
-    let currentHealthcareCost = 0;
     const partnerIsWorking = ip.use_partner_income && ip.partner_has_health_insurance &&
       currentYear >= partnerStarts && currentYear < partnerRetires;
     const bridgeCovered = (phase === 'BRIDGE') && !!ip.bridge_has_health_insurance;
@@ -495,36 +494,39 @@ export const runSimulation = (
 
     const adults = config.tax_assumptions.filing_status === 'married_joint' ? 2 : 1;
 
-    if (!hasEmployerCoverage) {
-      if (config.medicare && currentAge >= config.medicare.start_age) {
-        // Medicare: per-person all-in (Part B + Part D + modest Medigap) × adults.
-        // Far cheaper than private pre-65 coverage — healthcare drops at 65.
-        currentHealthcareCost = config.medicare.monthly_premium * adults * inflationMultiplier;
-      } else {
-        // Pre-65 private/ACA coverage scales with the number of people actually
-        // ON the plan. Children age off at ~22 (post-college), so the premium
-        // falls as each kid leaves — and is lowest once it's just the adults.
-        const baseFamilySize = Math.max(1, opt?.aca_family_size ?? 4);
-        const perCapita      = config.spending.healthcare_premium / baseFamilySize;
-        const coveredKids    = PERSONAL.children.filter(
-          c => currentYear - c.birthYear < CHILD_OFF_PLAN_AGE
-        ).length;
-        const coveredPeople  = adults + coveredKids;
-        currentHealthcareCost = perCapita * coveredPeople * inflationMultiplier;
+    // Self-paid healthcare cost — what the household WOULD pay without employer
+    // coverage. Computed every year (even while employed) because the FI target
+    // must reflect the retirement reality of buying your own coverage.
+    let selfPaidHealthcare: number;
+    if (config.medicare && currentAge >= config.medicare.start_age) {
+      // Medicare: per-person all-in (Part B + Part D + modest Medigap) × adults.
+      selfPaidHealthcare = config.medicare.monthly_premium * adults * inflationMultiplier;
+    } else {
+      // Pre-65 private/ACA coverage scales with the people actually on the plan;
+      // children age off at ~22 (post-college).
+      const baseFamilySize = Math.max(1, opt?.aca_family_size ?? 4);
+      const perCapita      = config.spending.healthcare_premium / baseFamilySize;
+      const coveredKids    = PERSONAL.children.filter(
+        c => currentYear - c.birthYear < CHILD_OFF_PLAN_AGE
+      ).length;
+      selfPaidHealthcare = perCapita * (adults + coveredKids) * inflationMultiplier;
+    }
 
-        // ACA premium subsidy applies only during a true low-income window —
-        // the sabbatical, when the family lives on rental income alone. In
-        // normal early retirement, six-figure withdrawals push MAGI above the
-        // meaningful-subsidy range, so they pay the full (kid-scaled) premium.
-        if (phase === 'SABBATICAL' && (opt?.enable_aca_optimization ?? true)) {
-          const fpl           = getFPL(baseFamilySize) * inflationMultiplier;
-          const magiForACA    = annualRentalGross + socialSecurityIncome * 12 * 0.85;
-          const fplRatio      = magiForACA / fpl;
-          const maxContribPct = acaMaxContributionPct(fplRatio);
-          const maxMonthly    = (magiForACA * maxContribPct) / 12;
-          // You pay the lesser of the full premium or your income-based cap.
-          currentHealthcareCost = Math.min(currentHealthcareCost, maxMonthly);
-        }
+    // Actual out-of-pocket healthcare expense this month (0 while employer-covered).
+    let currentHealthcareCost = 0;
+    if (!hasEmployerCoverage) {
+      currentHealthcareCost = selfPaidHealthcare;
+
+      // ACA premium subsidy applies only during a true low-income window — the
+      // sabbatical, when the family lives on rental income alone. In normal early
+      // retirement, six-figure withdrawals push MAGI above the subsidy range.
+      if (phase === 'SABBATICAL' && (opt?.enable_aca_optimization ?? true)) {
+        const baseFamilySize = Math.max(1, opt?.aca_family_size ?? 4);
+        const fpl            = getFPL(baseFamilySize) * inflationMultiplier;
+        const magiForACA     = annualRentalGross + socialSecurityIncome * 12 * 0.85;
+        const maxContribPct  = acaMaxContributionPct(magiForACA / fpl);
+        const maxMonthly     = (magiForACA * maxContribPct) / 12;
+        currentHealthcareCost = Math.min(currentHealthcareCost, maxMonthly);
       }
 
       expense += currentHealthcareCost;
@@ -682,7 +684,9 @@ export const runSimulation = (
     const SWR = 0.04; // 4% safe withdrawal rate (Rule of 25 → ×25)
     // baseMonthlySpend is in today's dollars (inflate it); currentHealthcareCost
     // is ALREADY inflation-adjusted above, so it must not be inflated again.
-    const annualExpenses      = (baseMonthlySpend * inflationMultiplier + currentHealthcareCost) * 12;
+    // Use SELF-PAID healthcare (not the employer-covered $0) so the target
+    // reflects what retirement actually costs — otherwise FI triggers years early.
+    const annualExpenses      = (baseMonthlySpend * inflationMultiplier + selfPaidHealthcare) * 12;
     const annualPassiveIncome = (monthlyRentalNet + socialSecurityIncome) * 12; // rental + SS, net
     const netAnnualNeed       = Math.max(0, annualExpenses - annualPassiveIncome);
     const swrTargetValue      = netAnnualNeed / SWR; // the FI Number (25× the net need)
