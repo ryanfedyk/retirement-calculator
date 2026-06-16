@@ -117,7 +117,7 @@ export function MomentumTurnstile({ point, config }: { point: TrajectoryPoint; c
 
   const card = cards[idx];
   return (
-    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", minHeight: 192, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.inkSoft }}>{card.tag}</span>
         <div style={{ display: "flex", gap: 6 }}>
@@ -130,10 +130,10 @@ export function MomentumTurnstile({ point, config }: { point: TrajectoryPoint; c
         <span style={{ fontSize: 30, fontWeight: 300, color: card.color, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{card.value}</span>
         <span style={{ fontSize: 13, color: C.inkMid }}>{card.unit}</span>
       </div>
-      <p style={{ fontSize: 13, color: C.inkMid, marginTop: 6, lineHeight: 1.5 }}>{card.blurb}</p>
+      <p style={{ fontSize: 13, color: C.inkMid, marginTop: 6, lineHeight: 1.5, minHeight: 58 }}>{card.blurb}</p>
 
       {card.pct != null && (
-        <div style={{ marginTop: 12, height: 6, borderRadius: 99, background: C.bg }}>
+        <div style={{ marginTop: "auto", height: 6, borderRadius: 99, background: C.bg }}>
           <div style={{ height: "100%", borderRadius: 99, background: card.color, width: `${Math.min(100, card.pct)}%`, transition: "width 0.6s ease" }} />
         </div>
       )}
