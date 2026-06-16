@@ -7,6 +7,7 @@ import { useFinancialStore } from "@/store/useFinancialStore";
 import { runSimulation, findIndependencePoint } from "@/engine/calculator";
 import { getLifeEvents } from "@/lib/horizonUtils";
 import { TodaysDelta, MomentumTurnstile, WhatIfChips } from "@/components/finance/MotivationWidgets";
+import AiAnalysis from "@/components/finance/AiAnalysis";
 import type { LivePrices } from "@/components/finance/FinancialDashboard";
 
 const fmtM = (v: number) => {
@@ -29,6 +30,7 @@ interface Props {
 export default function MobileFinancial({ livePrices, pricesFetching, onRefreshPrices, onOpenConfig }: Props) {
   const { config, snapshot } = useFinancialStore();
   const [view, setView] = useState<View>("wealth");
+  const [insightTab, setInsightTab] = useState<"today" | "scenarios" | "ai">("today");
 
   const googInfo      = livePrices["GOOG"] ?? livePrices["GOOGL"];
   const liveGoogPrice = googInfo?.price ?? 0;
@@ -157,10 +159,6 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
         <RefreshCw size={12} color={C.inkSoft} style={{ animation: pricesFetching ? "spin 0.8s linear infinite" : "none" }} />
       </button>
 
-      {/* Today's delta + momentum */}
-      <TodaysDelta trajectory={traj} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
-      {today && <MomentumTurnstile point={today} config={config} />}
-
       {/* Chart card — touchAction pan-y so dragging the chart never scrolls the page sideways */}
       <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 20, padding: "16px 12px 12px", touchAction: "pan-y" }}>
         {/* View pills */}
@@ -217,8 +215,30 @@ export default function MobileFinancial({ livePrices, pricesFetching, onRefreshP
         </ResponsiveContainer>
       </div>
 
-      {/* What-if scenarios */}
-      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
+      {/* Insights — progressive disclosure below the chart (mirrors desktop) */}
+      <div style={{ display: "flex", gap: 6, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 14, padding: 5 }}>
+        {([["today", "Today"], ["scenarios", "Scenarios"], ["ai", "AI Coach"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setInsightTab(id)} style={{
+            flex: 1, padding: "10px 0", borderRadius: 10, border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 600,
+            background: insightTab === id ? C.teal : "transparent",
+            color: insightTab === id ? "white" : C.inkSoft, transition: "all 0.15s",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {insightTab === "today" && (
+        <>
+          <TodaysDelta trajectory={traj} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
+          {today && <MomentumTurnstile point={today} config={config} />}
+        </>
+      )}
+      {insightTab === "scenarios" && (
+        <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
+      )}
+      {insightTab === "ai" && (
+        <AiAnalysis config={config} snapshot={snapshot} trajectory={traj} />
+      )}
 
       {/* Config summary — tap to open the full editor */}
       <button onClick={onOpenConfig} style={{
