@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Sliders, RotateCcw, Wallet, Trash2, PlusCircle } from "lucide-react";
+import { Sliders, RotateCcw, Wallet, Trash2, PlusCircle, ChevronDown } from "lucide-react";
 import { useFinancialStore } from "@/store/useFinancialStore";
 import { C } from "@/config/colors";
 import { DEFAULT_SNAPSHOT, DEFAULT_SIM_CONFIG } from "@/config/sharedConfig";
@@ -20,6 +20,30 @@ const Card = ({ children }: { children: React.ReactNode }) => (
     {children}
   </div>
 );
+
+// Collapsible config section — progressive disclosure so the long config list
+// is scannable. Independently toggles; essentials open by default.
+const AccCard = ({ id, title, color, openIds, toggle, children }: {
+  id: string; title: string; color: string;
+  openIds: Set<string>; toggle: (id: string) => void; children: React.ReactNode;
+}) => {
+  const open = openIds.has(id);
+  return (
+    <div style={{ background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
+      <button onClick={() => toggle(id)} style={{
+        width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "13px 14px", background: "transparent", border: "none", cursor: "pointer",
+      }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ width: 3, height: 16, borderRadius: 2, background: color }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.ink }}>{title}</span>
+        </span>
+        <ChevronDown size={15} color={C.inkSoft} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+      </button>
+      {open && <div style={{ padding: "0 16px 16px" }}>{children}</div>}
+    </div>
+  );
+};
 
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <label style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: C.inkFaint, display: "block", marginBottom: 4 }}>
@@ -173,6 +197,15 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
   const ma = config.market_assumptions;
   const sp = config.spending;
 
+  // Accordion: essentials open by default; everything else collapsed.
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set(["career", "market"]));
+  const toggle = (id: string) => setOpenIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const acc = (id: string) => ({ id, openIds, toggle });
+
   return (
     <aside style={{
       width: 300, flexShrink: 0, background: C.bgCard,
@@ -193,8 +226,7 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
       <div style={{ padding: "14px 16px", flex: 1 }}>
 
         {/* ── Assets & Liabilities ── */}
-        <Card>
-          <SectionHead color={C.teal}>Assets & Liabilities</SectionHead>
+        <AccCard {...acc("assets")} title="Assets & Liabilities" color={C.teal}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <FieldLabel>Cash Savings</FieldLabel>
@@ -217,11 +249,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
                 onChange={e => updateNestedSnapshot("liabilities", { mortgage_balance: +e.target.value || 0 })} />
             </div>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Career Trajectory ── */}
-        <Card>
-          <SectionHead color={C.teal}>Career Trajectory</SectionHead>
+        <AccCard {...acc("career")} title="Career Trajectory" color={C.teal}>
 
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -295,11 +326,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
               </Indent>
             )}
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Income Modeling ── */}
-        <Card>
-          <SectionHead color="#4aab92">Income Modeling</SectionHead>
+        <AccCard {...acc("income")} title="Income Modeling" color="#4aab92">
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <FieldLabel>Gross Annual Salary</FieldLabel>
@@ -362,11 +392,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
               </div>
             )}
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Market & Lifestyle ── */}
-        <Card>
-          <SectionHead color={C.warm}>Market & Lifestyle</SectionHead>
+        <AccCard {...acc("market")} title="Market & Lifestyle" color={C.warm}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row>
               <div><FieldLabel>Market Return (%)</FieldLabel>
@@ -421,11 +450,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
                   onChange={e => updateNestedConfig("spending", { empty_nest_monthly_spend: +e.target.value })} /></div>
             </Row>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Divestment Strategy ── */}
-        <Card>
-          <SectionHead color="#2a7a68">Divestment Strategy</SectionHead>
+        <AccCard {...acc("divest")} title="Divestment Strategy" color="#2a7a68">
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
             {(["none", "progressive", "immediate"] as const).map(t => (
               <button key={t} onClick={() => updateNestedConfig("divestment_strategy", { type: t })}
@@ -453,11 +481,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
                 onChange={e => { const v = +e.target.value; if (v > config.divestment_strategy.start_year) updateNestedConfig("divestment_strategy", { end_year: v }); }} />
             </div>
           )}
-        </Card>
+        </AccCard>
 
         {/* ── Tax Profiling ── */}
-        <Card>
-          <SectionHead color={C.inkMid}>Tax Profiling</SectionHead>
+        <AccCard {...acc("tax")} title="Tax Profiling" color={C.inkMid}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div><FieldLabel>Filing Status</FieldLabel>
               <Select value={config.tax_assumptions?.filing_status ?? "single"}
@@ -479,11 +506,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
               </Select>
             </div>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Social Security & Medicare ── */}
-        <Card>
-          <SectionHead color={C.inkSoft}>Social Security & Medicare</SectionHead>
+        <AccCard {...acc("ssmed")} title="Social Security & Medicare" color={C.inkSoft}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Row>
               <div><FieldLabel>SS Start Age</FieldLabel>
@@ -502,11 +528,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
                   onChange={e => updateNestedConfig("medicare", { monthly_premium: +e.target.value } as any)} /></div>
             </Row>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Life Events ── */}
-        <Card>
-          <SectionHead color="#c4784e">Life Events</SectionHead>
+        <AccCard {...acc("events")} title="Life Events" color="#c4784e">
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
             {(config.life_events || []).map((evt, idx) => (
               <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 7, padding: "8px 10px", border: `1px solid ${C.borderSoft}` }}>
@@ -541,11 +566,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
               </button>
             </div>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Portfolio Holdings ── */}
-        <Card>
-          <SectionHead color="#c4784e">Portfolio Holdings</SectionHead>
+        <AccCard {...acc("holdings")} title="Portfolio Holdings" color="#c4784e">
           <div style={{ marginBottom: 8 }}>
             {(snapshot.other_investments || []).map((inv, idx) => (
               <InvestmentItem key={inv.id || idx} inv={inv} liveInfo={livePrices[inv.symbol.toUpperCase()]}
@@ -581,11 +605,10 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
               + Add Investment
             </button>
           </div>
-        </Card>
+        </AccCard>
 
         {/* ── Education (529) ── */}
-        <Card>
-          <SectionHead color={C.teal}>Education Assets (529)</SectionHead>
+        <AccCard {...acc("edu")} title="Education Assets (529)" color={C.teal}>
           <div style={{ marginBottom: 8 }}>
             {(snapshot.education_assets?.accounts || []).map((acc, idx) => (
               <div key={acc.id || idx} className="group" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: C.bg, borderRadius: 6, border: `1px solid ${C.borderSoft}`, marginBottom: 6 }}>
@@ -616,7 +639,7 @@ export default function LeftPanel({ livePrices = {} }: { livePrices?: LivePrices
           }} style={{ width: "100%", padding: "7px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 11, fontWeight: 600, color: C.inkSoft, background: C.bg, border: `1px dashed ${C.border}`, borderRadius: 6, cursor: "pointer" }}>
             <PlusCircle size={12} /> Add 529 Account
           </button>
-        </Card>
+        </AccCard>
 
       </div>
     </aside>

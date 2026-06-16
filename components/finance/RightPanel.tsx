@@ -137,6 +137,7 @@ interface Props {
 export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching, onRefreshPrices }: Props) {
   const { snapshot, config } = useFinancialStore();
   const [chartView, setChartView] = useState<ChartView>("wealth");
+  const [insightTab, setInsightTab] = useState<"today" | "scenarios" | "ai">("today");
 
   // AI Analysis
   type AnalysisStatus = "On Track" | "At Risk" | "Needs Attention";
@@ -363,11 +364,7 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
         </SummaryCard>
       </div>
 
-      {/* ── Today's delta + momentum turnstile ── */}
-      <TodaysDelta trajectory={trajectoryData} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
-      {todayPoint && <MomentumTurnstile point={todayPoint} config={config} />}
-
-      {/* ── Main chart ── */}
+      {/* ── Main chart (the hero) ── */}
       <div style={{
         background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12,
         display: "flex", flexDirection: "column",
@@ -485,11 +482,31 @@ export default function RightPanel({ livePrices, pricesUpdatedAt, pricesFetching
         </div>
       )}
 
-      {/* ── What-if scenarios ── */}
-      <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
+      {/* ── Insights — progressive disclosure below the hero chart ── */}
+      <div style={{ display: "flex", gap: 6, background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 10, padding: 4, alignSelf: "flex-start" }}>
+        {([["today", "Today"], ["scenarios", "Scenarios"], ["ai", "AI Coach"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setInsightTab(id)} style={{
+            padding: "7px 16px", borderRadius: 7, border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 600,
+            background: insightTab === id ? C.teal : "transparent",
+            color: insightTab === id ? "white" : C.inkSoft, transition: "all 0.15s",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {insightTab === "today" && (
+        <>
+          <TodaysDelta trajectory={trajectoryData} snapshot={enrichedSnapshot} googPrice={liveGoogPrice} />
+          {todayPoint && <MomentumTurnstile point={todayPoint} config={config} />}
+        </>
+      )}
+
+      {insightTab === "scenarios" && (
+        <WhatIfChips snapshot={enrichedSnapshot} config={config} liveGoogPrice={liveGoogPrice} />
+      )}
 
       {/* ── AI Analysis ── */}
-      {(() => {
+      {insightTab === "ai" && (() => {
         const handleAnalyze = async () => {
           setAnalyzing(true);
           try {
